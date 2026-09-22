@@ -33,3 +33,7 @@ firebase-debug.log*
 *.njsproj
 *.sln
 *.sw?
+
+# Agent & Skill Directories
+.claude
+.agents

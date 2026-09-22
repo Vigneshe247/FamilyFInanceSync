@@ -1,9 +1,16 @@
 /* =========================================================
-   FLOATING CAPSULE TOP NAVIGATION (Finova & Crextio style)
+   FLOATING CAPSULE TOP NAVIGATION
+   Sections 2, 3, 4, 22, 37
+   Clean navigation with obsolete features removed, pure personal profile
+   modal trigger, notification dropdown, and testing role perspective switcher
    ========================================================= */
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useFamilyFinance } from '../../context/FamilyFinanceContext';
+import { usePermissions } from '../../context/FamilyContext';
+import { useAuth } from '../../context/AuthContext';
+import { useRouter } from '../../router/Router';
+import { ROLE_DISPLAY_NAMES, normalizeRole } from '../../utils/permissions';
 import {
   Bell,
   Sun,
@@ -12,11 +19,9 @@ import {
   ChevronDown,
   Check,
   LayoutDashboard,
-  Wallet,
   Receipt,
   PiggyBank,
   GitPullRequest,
-  BarChart3,
   Settings,
   MoreVertical,
   CreditCard,
@@ -24,30 +29,26 @@ import {
   Split,
   Target,
   Repeat,
-  Sparkles,
-  Camera,
-  Landmark,
-  UserCheck,
-  ShieldCheck,
-  FileText,
   UploadCloud,
+  LogOut,
+  User,
+  Users,
+  Shield,
 } from 'lucide-react';
 
 interface TopMenubarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
-  onOpenNewTx: () => void;
+  onOpenNewTx: (initialType?: 'expense' | 'income') => void;
   onOpenNewRequest: () => void;
-  onOpenAffordability: () => void;
-  onOpenReceiptOcr: () => void;
-  onOpenAuthModal?: () => void;
+  onOpenProfileModal: () => void;
   onOpenImportModal?: () => void;
 }
 
 export const TopMenubar: React.FC<TopMenubarProps> = ({
   activeTab,
   setActiveTab,
-  onOpenAuthModal,
+  onOpenProfileModal,
   onOpenImportModal,
 }) => {
   const {
@@ -61,7 +62,11 @@ export const TopMenubar: React.FC<TopMenubarProps> = ({
     theme,
     toggleTheme,
     requests,
+    isDemoMode,
   } = useFamilyFinance();
+
+  const { user, logout } = useAuth();
+  const { navigate } = useRouter();
 
   const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
   const [notifDropdownOpen, setNotifDropdownOpen] = useState(false);
@@ -90,53 +95,68 @@ export const TopMenubar: React.FC<TopMenubarProps> = ({
   const unreadNotifs = notifications.filter(n => !n.read_at);
   const pendingRequestsCount = requests.filter(r => r.status === 'pending').length;
 
-  const isHead = currentMember.role === 'FAMILY_HEAD';
-  const isChild = currentMember.role === 'CHILD';
+  const { can, isFamilyHead, isChild: isPermChild, isViewer } = usePermissions();
 
+  const isHead = isFamilyHead;
+  const isChild = isPermChild;
+
+  // Section 37 Navigation Structure
   const navTabs = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'accounts', label: 'Accounts', icon: Wallet },
-    { id: 'transactions', label: 'Transactions', icon: Receipt },
-    { id: 'budgets', label: 'Budgets', icon: PiggyBank, hidden: isChild },
-    { id: 'requests', label: 'Requests', icon: GitPullRequest, badge: pendingRequestsCount },
-    { id: 'reports', label: 'Analytics', icon: BarChart3, hidden: isChild },
+    { id: 'transactions', label: 'My Finances', icon: Receipt },
+    { id: 'members', label: 'Family Members', icon: Users, hidden: !can('viewMembers') },
+    { id: 'permissions', label: 'Roles & Permissions', icon: Shield, hidden: !isHead },
+    { id: 'requests', label: 'Requests', icon: GitPullRequest, badge: pendingRequestsCount, hidden: isViewer },
+    { id: 'budgets', label: 'Budgets', icon: PiggyBank, hidden: !can('viewBudget') || isChild },
   ];
 
+  // More modules with all obsolete features removed (Section 2)
   const allMoreModules = [
     { id: 'loans', label: 'Loans & Debt', icon: CreditCard, desc: 'Home, vehicle, education & EMI tracker', hidden: isChild },
     { id: 'investments', label: 'Investments', icon: TrendingUp, desc: 'Mutual funds, stocks, FDs & gold', hidden: isChild },
     { id: 'split_expenses', label: 'Split Bills', icon: Split, desc: 'Shared family utility & dinner splits', hidden: isChild },
     { id: 'goals', label: 'Savings Goals', icon: Target, desc: 'Family wealth targets & milestones' },
     { id: 'recurring', label: 'Bills & Recurring', icon: Repeat, desc: 'Subscriptions & automated ledger', hidden: isChild },
-    { id: 'ai_insights', label: 'AI Advisor', icon: Sparkles, desc: 'Interactive financial insights & chat' },
-    { id: 'receipt_ocr', label: 'Receipt Scanner', icon: Camera, desc: 'AI OCR receipt capture' },
-    { id: 'bank_sync', label: 'Bank Sync', icon: Landmark, desc: 'Account Aggregator & live feeds', hidden: isChild },
-    { id: 'audit', label: 'Audit Trail', icon: FileText, desc: 'Immutable transaction timeline', hidden: !isHead },
-    { id: 'approval_center', label: 'Approval Center', icon: UserCheck, desc: 'Review money requests & child spending', hidden: !isHead },
-    { id: 'security', label: 'Security & Auth', icon: ShieldCheck, desc: 'Sessions, 2FA & data isolation', hidden: isChild },
   ];
 
   const moreModules = allMoreModules.filter(m => !m.hidden);
-
   const isMoreModuleActive = moreModules.some(m => m.id === activeTab);
   const activeMoreModule = moreModules.find(m => m.id === activeTab);
 
   return (
     <header className="neo-capsule-navbar">
-      {/* 1. Left Brand Pill (Finova style) */}
-      <div className="brand-pill" onClick={() => setActiveTab('dashboard')}>
+      {/* 1. Left Brand Pill */}
+      <div className="brand-pill" onClick={() => setActiveTab('dashboard')} style={{ cursor: 'pointer' }}>
         <div className="brand-pill-logo">
           <span>F</span>
         </div>
         <div>
-          <div className="brand-pill-text">{family.name}</div>
-          <div style={{ fontSize: '0.65rem', color: 'var(--mint-primary)', fontWeight: 600 }}>
-            ● Realtime Synced
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+            <span className="brand-pill-text">{family.name}</span>
+            {isDemoMode && (
+              <span
+                style={{
+                  background: 'rgba(217, 119, 6, 0.15)',
+                  color: '#D97706',
+                  fontSize: '0.58rem',
+                  fontWeight: 800,
+                  padding: '0.1rem 0.35rem',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(217, 119, 6, 0.3)',
+                  letterSpacing: '0.04em',
+                }}
+              >
+                DEMO MODE
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize: '0.65rem', color: isDemoMode ? '#D97706' : 'var(--mint-primary)', fontWeight: 600 }}>
+            {isDemoMode ? 'Family Finance Sync' : '● Realtime Synced'}
           </div>
         </div>
       </div>
 
-      {/* 2. Center Pill Capsule Navigation Bar (Finova style) */}
+      {/* 2. Center Pill Capsule Navigation Bar */}
       <nav className="nav-capsule-bar">
         {navTabs.filter(t => !t.hidden).map(tab => {
           const isActive = activeTab === tab.id;
@@ -169,129 +189,130 @@ export const TopMenubar: React.FC<TopMenubarProps> = ({
           );
         })}
 
-        {/* More Modules Capsule Dropdown */}
-        <div style={{ position: 'relative' }} ref={moreMenuRef}>
-          <button
-            className={`nav-capsule-tab ${isMoreModuleActive ? 'active' : ''}`}
-            onClick={() => setMoreDropdownOpen(!moreDropdownOpen)}
-            title="More Financial Modules"
-          >
-            {activeMoreModule ? (
-              <activeMoreModule.icon size={15} />
-            ) : (
-              <MoreVertical size={15} />
-            )}
-            <span>{activeMoreModule ? activeMoreModule.label : 'More'}</span>
-            <ChevronDown size={12} style={{ opacity: 0.7 }} />
-          </button>
-
-          {moreDropdownOpen && (
-            <div
-              style={{
-                position: 'absolute',
-                top: 'calc(100% + 8px)',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                width: '320px',
-                background: 'var(--card-bg)',
-                borderRadius: '20px',
-                boxShadow: '0 20px 50px rgba(0,0,0,0.22)',
-                padding: '0.65rem',
-                zIndex: 1000,
-                border: '1px solid var(--border-card)',
-                backdropFilter: 'blur(20px)',
-              }}
+        {/* More Modules Dropdown */}
+        {moreModules.length > 0 && (
+          <div style={{ position: 'relative' }} ref={moreMenuRef}>
+            <button
+              className={`nav-capsule-tab ${isMoreModuleActive ? 'active' : ''}`}
+              onClick={() => setMoreDropdownOpen(!moreDropdownOpen)}
+              title="More Modules"
             >
+              {activeMoreModule ? (
+                <activeMoreModule.icon size={15} />
+              ) : (
+                <MoreVertical size={15} />
+              )}
+              <span>{activeMoreModule ? activeMoreModule.label : 'More'}</span>
+              <ChevronDown size={12} style={{ opacity: 0.7 }} />
+            </button>
+
+            {moreDropdownOpen && (
               <div
                 style={{
-                  fontSize: '0.68rem',
-                  fontWeight: 700,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.08em',
-                  color: 'var(--text-muted)',
-                  padding: '0.35rem 0.5rem',
-                  borderBottom: '1px solid var(--border-subtle)',
-                  marginBottom: '0.35rem',
+                  position: 'absolute',
+                  top: 'calc(100% + 8px)',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  width: '300px',
+                  background: 'var(--card-bg)',
+                  borderRadius: '20px',
+                  boxShadow: '0 20px 50px rgba(0,0,0,0.22)',
+                  padding: '0.65rem',
+                  zIndex: 1000,
+                  border: '1px solid var(--border-card)',
+                  backdropFilter: 'blur(20px)',
                 }}
               >
-                Financial Extensions & Wealth
-              </div>
+                <div
+                  style={{
+                    fontSize: '0.68rem',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.08em',
+                    color: 'var(--text-muted)',
+                    padding: '0.35rem 0.5rem',
+                    borderBottom: '1px solid var(--border-subtle)',
+                    marginBottom: '0.35rem',
+                  }}
+                >
+                  Financial Modules
+                </div>
 
-              <div style={{ maxHeight: '340px', overflowY: 'auto' }}>
-                {moreModules.map(module => {
-                  const isSelected = activeTab === module.id;
-                  const IconComp = module.icon;
-                  return (
-                    <div
-                      key={module.id}
-                      onClick={() => {
-                        setActiveTab(module.id);
-                        setMoreDropdownOpen(false);
-                      }}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.75rem',
-                        padding: '0.55rem 0.65rem',
-                        borderRadius: '12px',
-                        cursor: 'pointer',
-                        background: isSelected ? 'var(--bg-canvas)' : 'transparent',
-                        transition: 'background 0.15s ease',
-                        marginBottom: '0.15rem',
-                      }}
-                    >
+                <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                  {moreModules.map(module => {
+                    const isSelected = activeTab === module.id;
+                    const IconComp = module.icon;
+                    return (
                       <div
+                        key={module.id}
+                        onClick={() => {
+                          setActiveTab(module.id);
+                          setMoreDropdownOpen(false);
+                        }}
                         style={{
-                          width: 30,
-                          height: 30,
-                          borderRadius: '8px',
-                          background: isSelected ? 'var(--mint-pill)' : 'var(--bg-canvas)',
-                          color: isSelected ? 'var(--mint-primary)' : 'var(--text-muted)',
                           display: 'flex',
                           alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0,
+                          gap: '0.75rem',
+                          padding: '0.55rem 0.65rem',
+                          borderRadius: '12px',
+                          cursor: 'pointer',
+                          background: isSelected ? 'var(--bg-canvas)' : 'transparent',
+                          transition: 'background 0.15s ease',
+                          marginBottom: '0.15rem',
                         }}
                       >
-                        <IconComp size={16} />
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
                         <div
                           style={{
-                            fontSize: '0.82rem',
-                            fontWeight: isSelected ? 700 : 600,
-                            color: 'var(--text-main)',
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
+                            width: 30,
+                            height: 30,
+                            borderRadius: '8px',
+                            background: isSelected ? 'var(--mint-pill)' : 'var(--bg-canvas)',
+                            color: isSelected ? 'var(--mint-primary)' : 'var(--text-muted)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
                           }}
                         >
-                          {module.label}
+                          <IconComp size={16} />
                         </div>
-                        <div
-                          style={{
-                            fontSize: '0.68rem',
-                            color: 'var(--text-muted)',
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                          }}
-                        >
-                          {module.desc}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div
+                            style={{
+                              fontSize: '0.82rem',
+                              fontWeight: isSelected ? 700 : 600,
+                              color: 'var(--text-main)',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                            }}
+                          >
+                            {module.label}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: '0.68rem',
+                              color: 'var(--text-muted)',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                            }}
+                          >
+                            {module.desc}
+                          </div>
                         </div>
+                        {isSelected && <Check size={15} color="var(--mint-primary)" />}
                       </div>
-                      {isSelected && <Check size={15} color="var(--mint-primary)" />}
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          )}
-        </div>
-
+            )}
+          </div>
+        )}
       </nav>
 
-      {/* 3. Right Controls: Search, Notification, Theme, Role Switcher on Far Right */}
+      {/* 3. Right Controls: Search, Notification Bell, Theme, Profile */}
       <div className="header-actions-pill-group">
         {/* Search button */}
         <button
@@ -302,12 +323,12 @@ export const TopMenubar: React.FC<TopMenubarProps> = ({
           <Search size={16} />
         </button>
 
-        {/* Notification Bell with Badge */}
+        {/* Notification Bell with Badge (Section 22) */}
         <div style={{ position: 'relative' }} ref={notifMenuRef}>
           <button
             className="action-circle-btn"
             onClick={() => setNotifDropdownOpen(!notifDropdownOpen)}
-            title="Notifications"
+            title="Notification Center"
           >
             <Bell size={16} />
             {unreadNotifs.length > 0 && (
@@ -322,7 +343,7 @@ export const TopMenubar: React.FC<TopMenubarProps> = ({
                   backgroundColor: '#EB5757',
                   border: '2px solid #FFFFFF',
                 }}
-              ></span>
+              />
             )}
           </button>
 
@@ -332,7 +353,7 @@ export const TopMenubar: React.FC<TopMenubarProps> = ({
                 position: 'absolute',
                 top: 'calc(100% + 8px)',
                 right: 0,
-                width: '310px',
+                width: '320px',
                 background: 'var(--card-bg)',
                 borderRadius: '20px',
                 boxShadow: 'var(--shadow-lg)',
@@ -356,26 +377,33 @@ export const TopMenubar: React.FC<TopMenubarProps> = ({
               </div>
 
               <div style={{ maxHeight: '280px', overflowY: 'auto' }}>
-                {notifications.slice(0, 4).map(n => (
-                  <div
-                    key={n.id}
-                    onClick={() => markNotificationRead(n.id)}
-                    style={{
-                      padding: '0.6rem 0.75rem',
-                      borderRadius: '12px',
-                      background: n.read_at ? 'transparent' : 'var(--bg-canvas)',
-                      cursor: 'pointer',
-                      marginBottom: '0.25rem',
-                    }}
-                  >
-                    <div style={{ fontWeight: 600, fontSize: '0.8rem', color: 'var(--text-main)' }}>
-                      {n.title}
-                    </div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
-                      {n.message}
-                    </div>
+                {notifications.length === 0 ? (
+                  <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                    No notifications yet
                   </div>
-                ))}
+                ) : (
+                  notifications.slice(0, 6).map(n => (
+                    <div
+                      key={n.id}
+                      onClick={() => markNotificationRead(n.id)}
+                      style={{
+                        padding: '0.6rem 0.75rem',
+                        borderRadius: '12px',
+                        background: n.read_at ? 'transparent' : 'var(--bg-canvas)',
+                        cursor: 'pointer',
+                        marginBottom: '0.25rem',
+                        borderLeft: n.read_at ? 'none' : '3px solid var(--primary)',
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, fontSize: '0.8rem', color: 'var(--text-main)' }}>
+                        {n.title}
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+                        {n.message}
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           )}
@@ -390,53 +418,21 @@ export const TopMenubar: React.FC<TopMenubarProps> = ({
           {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
         </button>
 
-        {/* Settings Quick Action Button for easy selection */}
+        {/* Profile Circle Button (Section 3) */}
         <button
           className="action-circle-btn"
-          onClick={() => setActiveTab('control_center')}
-          title={isHead ? 'Family Control Center & Settings' : 'Member Settings & Preferences'}
+          onClick={onOpenProfileModal}
+          title="My Profile"
           style={{
-            borderColor: activeTab === 'control_center' ? 'var(--mint-primary)' : undefined,
-            background: activeTab === 'control_center' ? 'var(--mint-pill)' : undefined,
-            color: activeTab === 'control_center' ? 'var(--mint-primary)' : undefined,
+            borderColor: 'var(--mint-primary)',
+            background: 'rgba(5, 150, 105, 0.08)',
+            color: 'var(--mint-primary)',
           }}
         >
-          <Settings size={16} />
+          <User size={16} />
         </button>
 
-        {/* Data Import Trigger (Excel, DOCX, PDF) */}
-        {onOpenImportModal && (
-          <button
-            className="action-circle-btn"
-            onClick={onOpenImportModal}
-            title="Import Family Data (Excel / DOCX / PDF)"
-            style={{
-              borderColor: 'var(--sky-accent)',
-              background: 'rgba(62, 139, 245, 0.08)',
-              color: 'var(--sky-accent)',
-            }}
-          >
-            <UploadCloud size={16} />
-          </button>
-        )}
-
-        {/* User Profile & Auth Trigger */}
-        {onOpenAuthModal && (
-          <button
-            className="action-circle-btn"
-            onClick={onOpenAuthModal}
-            title="User Profile & Auth Management"
-            style={{
-              borderColor: 'var(--mint-primary)',
-              background: 'rgba(56, 161, 105, 0.08)',
-              color: 'var(--mint-primary)',
-            }}
-          >
-            <UserCheck size={16} />
-          </button>
-        )}
-
-        {/* Dynamic Role Switcher (Far Right, opening inward to the left) */}
+        {/* Role Switcher & Member Menu (Far Right) */}
         <div style={{ position: 'relative' }} ref={roleMenuRef}>
           <div
             className="header-role-pill"
@@ -456,96 +452,102 @@ export const TopMenubar: React.FC<TopMenubarProps> = ({
                 style={{
                   fontSize: '0.62rem',
                   fontWeight: 600,
-                  color: currentMember.role === 'FAMILY_HEAD' ? 'var(--mint-primary)' : 'var(--amber-accent)',
+                  color: isHead ? 'var(--mint-primary)' : 'var(--amber-accent)',
                   textTransform: 'uppercase',
                   whiteSpace: 'nowrap',
                 }}
               >
-                {currentMember.role.replace('_', ' ')}
+                {ROLE_DISPLAY_NAMES[normalizeRole(currentMember.role)] || currentMember.role.replace('_', ' ')}
               </div>
             </div>
             <ChevronDown size={13} style={{ color: 'var(--text-muted)' }} />
           </div>
 
-          {/* Role Switcher Dropdown (Opens inward with z-index 1000) */}
+          {/* Profile & Role Switcher Dropdown */}
           {roleDropdownOpen && (
             <div
               style={{
                 position: 'absolute',
                 top: 'calc(100% + 8px)',
                 right: 0,
-                width: '270px',
+                width: '290px',
                 background: 'var(--card-bg)',
                 borderRadius: '20px',
-                boxShadow: '0 16px 40px rgba(0, 0, 0, 0.18)',
-                padding: '0.6rem',
+                boxShadow: '0 20px 50px rgba(0, 0, 0, 0.22)',
+                padding: '0.85rem',
                 zIndex: 1000,
                 border: '1px solid var(--border-card)',
               }}
             >
+              {/* Profile Card Header */}
               <div
                 style={{
-                  fontSize: '0.68rem',
-                  fontWeight: 700,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.08em',
-                  color: 'var(--text-muted)',
-                  padding: '0.35rem 0.5rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                  paddingBottom: '0.75rem',
                   borderBottom: '1px solid var(--border-subtle)',
-                  marginBottom: '0.35rem',
+                  marginBottom: '0.65rem',
                 }}
               >
-                Switch Role & Perspective
+                <img
+                  src={currentMember.user.avatar_url}
+                  alt={currentMember.user.name}
+                  style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover' }}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 800, fontSize: '0.9rem', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {currentMember.user.name}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {currentMember.user.email}
+                  </div>
+                  <div style={{ marginTop: '0.2rem' }}>
+                    <span
+                      style={{
+                        fontSize: '0.62rem',
+                        fontWeight: 700,
+                        padding: '0.15rem 0.45rem',
+                        borderRadius: '6px',
+                        background: isHead ? 'rgba(5, 150, 105, 0.15)' : 'rgba(99, 102, 241, 0.15)',
+                        color: isHead ? '#059669' : '#6366F1',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.04em',
+                      }}
+                    >
+                      {ROLE_DISPLAY_NAMES[normalizeRole(currentMember.role)] || currentMember.role.replace('_', ' ')}
+                    </span>
+                  </div>
+                </div>
               </div>
 
-              {members.map(member => {
-                const isSelected = member.id === currentMember.id;
-                return (
-                  <div
-                    key={member.id}
-                    onClick={() => {
-                      switchMember(member.id);
-                      setRoleDropdownOpen(false);
-                    }}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '0.5rem 0.6rem',
-                      borderRadius: '12px',
-                      cursor: 'pointer',
-                      background: isSelected ? 'var(--bg-canvas)' : 'transparent',
-                      transition: 'background 0.15s ease',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                      <img
-                        src={member.user.avatar_url}
-                        alt={member.user.name}
-                        style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover' }}
-                      />
-                      <div>
-                        <div style={{ fontSize: '0.82rem', fontWeight: 600 }}>{member.user.name}</div>
-                        <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                          {member.role.replace('_', ' ')}
-                        </div>
-                      </div>
-                    </div>
-                    {isSelected && <Check size={16} color="var(--mint-primary)" />}
-                  </div>
-                );
-              })}
+              {/* Profile Menu Actions (Section 3 & 4: Zero auth/security controls) */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', marginBottom: '0.65rem' }}>
+                <button
+                  onClick={() => {
+                    setRoleDropdownOpen(false);
+                    onOpenProfileModal();
+                  }}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.6rem',
+                    padding: '0.5rem 0.65rem',
+                    borderRadius: '10px',
+                    border: 'none',
+                    background: 'transparent',
+                    color: 'var(--text-main)',
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  <User size={15} color="var(--mint-primary)" />
+                  <span>View Personal Profile</span>
+                </button>
 
-              <div
-                style={{
-                  borderTop: '1px solid var(--border-subtle)',
-                  marginTop: '0.45rem',
-                  paddingTop: '0.45rem',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '0.35rem',
-                }}
-              >
                 <button
                   onClick={() => {
                     setRoleDropdownOpen(false);
@@ -555,46 +557,103 @@ export const TopMenubar: React.FC<TopMenubarProps> = ({
                     width: '100%',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '0.5rem',
-                    padding: '0.5rem 0.6rem',
-                    borderRadius: '12px',
-                    border: '1px solid var(--border-card)',
-                    background: 'var(--bg-canvas-subtle)',
+                    gap: '0.6rem',
+                    padding: '0.5rem 0.65rem',
+                    borderRadius: '10px',
+                    border: 'none',
+                    background: 'transparent',
                     color: 'var(--text-main)',
                     fontSize: '0.78rem',
-                    fontWeight: 700,
+                    fontWeight: 600,
                     cursor: 'pointer',
+                    textAlign: 'left',
                   }}
                 >
                   <Settings size={15} color="var(--mint-primary)" />
-                  <span>{isHead ? 'Family Control Center' : 'Settings & Preferences'}</span>
+                  <span>Family Settings</span>
                 </button>
 
-                {onOpenAuthModal && (
-                  <button
-                    onClick={() => {
-                      setRoleDropdownOpen(false);
-                      onOpenAuthModal();
-                    }}
-                    style={{
-                      width: '100%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.5rem',
-                      padding: '0.5rem 0.6rem',
-                      borderRadius: '12px',
-                      border: 'none',
-                      background: 'var(--mint-pill)',
-                      color: 'var(--mint-primary)',
-                      fontSize: '0.78rem',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <UserCheck size={15} />
-                    <span>Manage Profile & Auth</span>
-                  </button>
-                )}
+                <button
+                  onClick={async () => {
+                    setRoleDropdownOpen(false);
+                    await logout();
+                    navigate('/login');
+                  }}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.6rem',
+                    padding: '0.5rem 0.65rem',
+                    borderRadius: '10px',
+                    border: 'none',
+                    background: 'rgba(235, 87, 87, 0.08)',
+                    color: '#EB5757',
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    marginTop: '0.2rem',
+                  }}
+                >
+                  <LogOut size={15} />
+                  <span>Sign Out</span>
+                </button>
+              </div>
+
+              {/* Role Perspective Switcher for Testing (Section 26 & 38) */}
+              <div
+                style={{
+                  fontSize: '0.65rem',
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  color: 'var(--text-muted)',
+                  padding: '0.4rem 0.5rem 0.25rem',
+                  borderTop: '1px solid var(--border-subtle)',
+                }}
+              >
+                Switch Role Perspective
+              </div>
+
+              <div style={{ maxHeight: '160px', overflowY: 'auto' }}>
+                {members.map(member => {
+                  const isSelected = member.id === currentMember.id;
+                  return (
+                    <div
+                      key={member.id}
+                      onClick={() => {
+                        switchMember(member.id);
+                        setRoleDropdownOpen(false);
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '0.4rem 0.5rem',
+                        borderRadius: '10px',
+                        cursor: 'pointer',
+                        background: isSelected ? 'var(--bg-canvas)' : 'transparent',
+                        transition: 'background 0.15s ease',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <img
+                          src={member.user.avatar_url}
+                          alt={member.user.name}
+                          style={{ width: 24, height: 24, borderRadius: '50%', objectFit: 'cover' }}
+                        />
+                        <div>
+                          <div style={{ fontSize: '0.78rem', fontWeight: 600 }}>{member.user.name}</div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                            {ROLE_DISPLAY_NAMES[normalizeRole(member.role)] || member.role.replace('_', ' ')}
+                          </div>
+                        </div>
+                      </div>
+                      {isSelected && <Check size={14} color="var(--mint-primary)" />}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

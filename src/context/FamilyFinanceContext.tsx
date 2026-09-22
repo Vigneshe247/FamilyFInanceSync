@@ -27,6 +27,9 @@ import {
   VisibilityClassification,
 } from '../types';
 import { firebaseSync } from '../services/firebase';
+import { supabaseDataService } from '../services/supabaseDataService';
+import { calculateFamilySummary, FamilyFinancialSummary } from '../utils/financialEngine';
+import { getFamilyChannel } from '../lib/realtime/domain/familyRealtime';
 import {
   DEMO_FAMILY,
   DEMO_MEMBERS,
@@ -44,7 +47,9 @@ import {
   DEMO_LOANS,
   DEMO_INVESTMENTS,
   DEMO_SHARED_EXPENSES,
+  SYSTEM_PERMISSIONS,
 } from '../data/seedData';
+import { normalizeRole } from '../utils/permissions';
 
 interface FamilyFinanceContextType {
   family: Family;
@@ -54,6 +59,7 @@ interface FamilyFinanceContextType {
   categories: Category[];
   accounts: Account[];
   transactions: Transaction[];
+  summary: FamilyFinancialSummary;
   budget: Budget;
   savingsGoals: SavingsGoal[];
   requests: ExpenseRequest[];
@@ -80,7 +86,7 @@ interface FamilyFinanceContextType {
   disburseAllowance: (memberId: string, amountPaise: number) => void;
   addAccount: (acc: Omit<Account, 'id' | 'created_at' | 'family_id'>) => void;
   deleteAccount: (id: string) => void;
-  createRequest: (req: { title: string; amount: number; category_id: string; description: string }) => ExpenseRequest;
+  createRequest: (req: { title: string; amount: number; category_id: string; description: string; request_type?: ExpenseRequest['request_type'] }) => ExpenseRequest;
   approveRequest: (requestId: string, reviewComment?: string) => void;
   rejectRequest: (requestId: string, reviewComment?: string) => void;
   contributeToGoal: (goalId: string, amountPaise: number) => void;
@@ -89,10 +95,15 @@ interface FamilyFinanceContextType {
   updateMemberLimit: (memberId: string, limitPaise: number) => void;
   updateMemberRole: (memberId: string, newRole: SystemRoleType) => void;
   toggleMemberPermission: (memberId: string, perm: PermissionKey, allowed: boolean) => void;
+  grantAllMemberPermissions: (memberId: string) => void;
+  revokeAllMemberPermissions: (memberId: string) => void;
+  resetMemberPermissions: (memberId: string) => void;
   inviteMember: (name: string, email: string, role: SystemRoleType, allowance?: number) => void;
   createInvitation: (role: SystemRoleType, email?: string) => FamilyInvitation;
   revokeInvitation: (invitationId: string) => void;
   removeMember: (memberId: string) => void;
+  createRole: (roleName: string, description: string) => RoleDefinition;
+  updateMemberSharing: (memberId: string, incomeSharing: boolean, expenseSharing: boolean) => void;
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: () => void;
   addLoan: (loan: Omit<LoanItem, 'id' | 'family_id' | 'created_at' | 'total_paid'>) => void;
@@ -104,7 +115,18 @@ interface FamilyFinanceContextType {
   addSharedExpense: (split: Omit<SharedExpenseSplit, 'id' | 'family_id' | 'created_at'>) => void;
   settleSplitShare: (splitId: string, memberId: string) => void;
   markRecurringPaid: (id: string) => void;
-  updateUserProfile: (name: string, email: string, avatarUrl?: string) => void;
+  updateUserProfile: (
+    name: string,
+    email: string,
+    avatarUrl?: string,
+    extra?: {
+      phone?: string;
+      date_of_birth?: string;
+      gender?: string;
+      location?: string;
+      bio?: string;
+    }
+  ) => void;
   updateFamilyName: (newName: string) => void;
   resetToDemoDefaults: () => void;
   bulkImportFamilyData: (data: {
@@ -117,6 +139,7 @@ interface FamilyFinanceContextType {
   lookupInvitation: (inviteCodeOrLink: string) => { found: boolean; invitation?: FamilyInvitation; familyName: string; inviterName: string; assignedRole: SystemRoleType } | null;
   acceptInvitation: (inviteCodeOrLink: string, userName: string, userEmail: string) => FamilyMember;
   loadDemoFamilyWorkspace: () => void;
+  isDemoMode: boolean;
 }
 
 const FamilyFinanceContext = createContext<FamilyFinanceContextType | undefined>(undefined);
@@ -147,8 +170,15 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
 
   const [family, setFamily] = useState<Family>(() => loadStorage('family', DEMO_FAMILY));
   const [members, setMembers] = useState<FamilyMember[]>(() => loadStorage('members', DEMO_MEMBERS));
-  const [currentMemberId, setCurrentMemberId] = useState<string>(() => loadStorage('active_member_id', 'mem-arun'));
+  const [currentMemberId, setCurrentMemberId] = useState<string>(() => loadStorage('active_member_id', 'mem-raj'));
+  const [isDemoMode, setIsDemoMode] = useState<boolean>(() => loadStorage('is_demo_mode', true));
+
+  const checkReadOnly = useCallback((): boolean => {
+    // In demo mode or sandbox mode, permit interactive manual entry so the user can test the workflow
+    return false;
+  }, []);
   const [categories] = useState<Category[]>(() => loadStorage('categories', DEMO_CATEGORIES));
+  const [roles, setRoles] = useState<RoleDefinition[]>(() => loadStorage('roles', ROLE_DEFINITIONS));
   const [accounts, setAccounts] = useState<Account[]>(() => loadStorage('accounts', DEMO_ACCOUNTS));
   const [transactions, setTransactions] = useState<Transaction[]>(() => loadStorage('transactions', DEMO_TRANSACTIONS));
   const [budget, setBudget] = useState<Budget>(() => loadStorage('budget', DEMO_BUDGET));
@@ -164,9 +194,72 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
   const [invitations, setInvitations] = useState<FamilyInvitation[]>(() => loadStorage('invitations', []));
   const [allowances, setAllowances] = useState<AllowanceConfig[]>(() => loadStorage('allowances', []));
 
+  // Centralized Financial Aggregation Engine (Sections 2, 11, 21, 26, 46)
+  const summary = React.useMemo(() => {
+    return calculateFamilySummary(transactions, accounts);
+  }, [transactions, accounts]);
+
+  // Supabase Real-Time Channel Subscription (Sections 8, 10, 36)
+  useEffect(() => {
+    if (!family.id || isDemoMode || family.id === 'fam-demo-001') return;
+
+    // 1. Initial fetch from Supabase
+    supabaseDataService.fetchFamilyWorkspace(family.id).then(data => {
+      if (data) {
+        if (data.transactions && data.transactions.length > 0) {
+          setTransactions(data.transactions);
+        }
+        if (data.accounts && data.accounts.length > 0) {
+          setAccounts(data.accounts);
+        }
+        if (data.requests && data.requests.length > 0) {
+          setRequests(data.requests);
+        }
+        if (data.auditLogs && data.auditLogs.length > 0) {
+          setAuditLogs(data.auditLogs);
+        }
+      }
+    });
+
+    // 2. Realtime listener on channel family:{familyId}
+    const unsubscribe = supabaseDataService.subscribeToFamilyRealtime(
+      family.id,
+      (table, eventType, newRow, oldRow) => {
+        if (table === 'transactions') {
+          if (eventType === 'INSERT' && newRow) {
+            setTransactions(prev => (prev.some(t => t.id === newRow.id) ? prev : [newRow, ...prev]));
+          } else if (eventType === 'DELETE' && oldRow) {
+            setTransactions(prev => prev.filter(t => t.id !== oldRow.id));
+          } else if (eventType === 'UPDATE' && newRow) {
+            setTransactions(prev => prev.map(t => (t.id === newRow.id ? newRow : t)));
+          }
+        } else if (table === 'requests') {
+          if (eventType === 'INSERT' && newRow) {
+            setRequests(prev => (prev.some(r => r.id === newRow.id) ? prev : [newRow, ...prev]));
+          } else if (eventType === 'UPDATE' && newRow) {
+            setRequests(prev => prev.map(r => (r.id === newRow.id ? newRow : r)));
+          }
+        } else if (table === 'audit_logs') {
+          if (eventType === 'INSERT' && newRow) {
+            setAuditLogs(prev => (prev.some(a => a.id === newRow.id) ? prev : [newRow, ...prev]));
+          }
+        } else if (table === 'accounts') {
+          if (eventType === 'UPDATE' && newRow) {
+            setAccounts(prev => prev.map(a => (a.id === newRow.id ? newRow : a)));
+          }
+        }
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [family.id, isDemoMode]);
+
   // Sync state changes to storage
   useEffect(() => saveStorage('family', family), [family]);
   useEffect(() => saveStorage('members', members), [members]);
+  useEffect(() => saveStorage('roles', roles), [roles]);
   useEffect(() => saveStorage('active_member_id', currentMemberId), [currentMemberId]);
   useEffect(() => saveStorage('accounts', accounts), [accounts]);
   useEffect(() => saveStorage('transactions', transactions), [transactions]);
@@ -234,17 +327,22 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
 
   // Dynamic RBAC Permission Check
   const hasPermission = useCallback((perm: PermissionKey): boolean => {
-    if (currentMember.role === 'FAMILY_HEAD') return true;
+    const normRole = normalizeRole(currentMember.role);
+    if (normRole === 'family_head' || currentMember.role === 'FAMILY_HEAD') return true;
 
     // Check custom overrides on the member
     if (currentMember.custom_permissions && currentMember.custom_permissions[perm] !== undefined) {
-      return currentMember.custom_permissions[perm];
+      return Boolean(currentMember.custom_permissions[perm]);
     }
 
     // Role default permissions
-    const roleDef = ROLE_DEFINITIONS.find(r => r.name === currentMember.role);
-    return roleDef ? roleDef.default_permissions.includes(perm) : false;
-  }, [currentMember]);
+    const roleDef = roles.find(r => 
+      r.id === currentMember.role ||
+      r.name.toLowerCase() === currentMember.role.toLowerCase() ||
+      normalizeRole(r.name) === normRole
+    );
+    return roleDef ? (roleDef.default_permissions?.includes(perm) ?? false) : false;
+  }, [currentMember, roles]);
 
   // Check if member can approve an amount based on Approval Rules Engine
   const canApproveRequestAmount = useCallback((amountPaise: number): boolean => {
@@ -258,6 +356,16 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
 
   // Action: Add Transaction
   const addTransaction = useCallback((txData: Omit<Transaction, 'id' | 'created_at' | 'updated_at' | 'family_id'>): Transaction => {
+    if (checkReadOnly()) {
+      return {
+        ...txData,
+        id: `demo-blocked-${Date.now()}`,
+        family_id: family.id,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      } as Transaction;
+    }
+
     const newTx: Transaction = {
       ...txData,
       id: `tx-${Date.now()}`,
@@ -284,11 +392,47 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
       description: newTx.description,
     });
 
+    // Supabase PostgreSQL sync
+    if (!isDemoMode && family.id && !family.id.startsWith('fam-demo')) {
+      supabaseDataService.createTransaction({
+        ...txData,
+        family_id: family.id,
+      }).catch(err => console.warn('Supabase createTransaction deferred:', err));
+    }
+
+    // Realtime domain event publication
+    try {
+      getFamilyChannel(family.id).publish('transaction.created', {
+        id: newTx.id,
+        user_id: newTx.user_id,
+        type: newTx.type,
+        amount: newTx.amount,
+        category_id: newTx.category_id,
+        custom_category: newTx.custom_category,
+        description: newTx.description,
+        date: newTx.transaction_date,
+      });
+    } catch (err) {
+      console.warn('Realtime publish warning:', err);
+    }
+
+    // Notify Family Head if another member added expense/income
+    const head = members.find(m => m.role === 'FAMILY_HEAD' || m.role === 'family_head');
+    if (head && head.user_id !== txData.user_id) {
+      addNotification(
+        head.user_id,
+        'member_activity',
+        `New ${txData.type === 'income' ? 'Income' : 'Expense'} from ${currentMember.user.name}`,
+        `${currentMember.user.name} recorded ${newTx.description || 'a transaction'} for ₹${(newTx.amount / 100).toLocaleString('en-IN')}.`
+      );
+    }
+
     return newTx;
-  }, [family.id, logAudit]);
+  }, [family.id, logAudit, checkReadOnly, isDemoMode, members, currentMember, addNotification]);
 
   // Action: Delete Transaction
   const deleteTransaction = useCallback((id: string) => {
+    if (checkReadOnly()) return;
     const tx = transactions.find(t => t.id === id);
     if (!tx) return;
 
@@ -307,12 +451,24 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
       description: tx.description,
       amount: tx.amount,
     });
-  }, [transactions, logAudit]);
+
+    // Supabase PostgreSQL delete
+    if (!isDemoMode && family.id && !family.id.startsWith('fam-demo')) {
+      supabaseDataService.deleteTransaction(
+        id,
+        tx.account_id,
+        tx.amount,
+        tx.type,
+        family.id,
+        currentMember.user_id
+      ).catch(err => console.warn('Supabase deleteTransaction deferred:', err));
+    }
+  }, [transactions, logAudit, checkReadOnly, isDemoMode, family.id, currentMember.user_id]);
 
   // Action: Create Request
-  const createRequest = useCallback((reqData: { title: string; amount: number; category_id: string; description: string }): ExpenseRequest => {
+  const createRequest = useCallback((reqData: { title: string; amount: number; category_id: string; description: string; request_type?: ExpenseRequest['request_type'] }): ExpenseRequest => {
     // Check if auto-approved rule triggers (e.g. adult member < ₹500, but NOT child)
-    const isChild = currentMember.role === 'CHILD';
+    const isChild = currentMember.role === 'CHILD' || currentMember.role === 'son' || currentMember.role === 'daughter';
     const isAutoApproved = !isChild && reqData.amount <= 50000;
 
     const newReq: ExpenseRequest = {
@@ -324,6 +480,7 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
       category_id: reqData.category_id,
       title: reqData.title,
       description: reqData.description,
+      request_type: reqData.request_type || 'permission_request',
       status: isAutoApproved ? 'approved' : 'pending',
       reviewed_by: isAutoApproved ? 'system' : undefined,
       reviewer_name: isAutoApproved ? 'Auto-Approval Rule' : undefined,
@@ -333,6 +490,19 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
     };
 
     setRequests(prev => [newReq, ...prev]);
+
+    // Realtime publication
+    try {
+      getFamilyChannel(family.id).publish('request.created', {
+        id: newReq.id,
+        requested_by: newReq.requested_by,
+        title: newReq.title,
+        amount: newReq.amount,
+        request_type: newReq.request_type,
+      });
+    } catch (err) {
+      console.warn('Realtime publish warning:', err);
+    }
 
     // If auto-approved, also create transaction
     if (isAutoApproved) {
@@ -367,8 +537,20 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
       );
     }
 
+    // Supabase PostgreSQL request
+    if (!isDemoMode && family.id && !family.id.startsWith('fam-demo')) {
+      supabaseDataService.createExpenseRequest({
+        family_id: family.id,
+        requested_by: currentMember.user_id,
+        amount: reqData.amount,
+        category_id: reqData.category_id,
+        title: reqData.title,
+        description: reqData.description,
+      }).catch(err => console.warn('Supabase createExpenseRequest deferred:', err));
+    }
+
     return newReq;
-  }, [currentMember, family.id, accounts, addTransaction, logAudit, members, addNotification]);
+  }, [currentMember, family.id, accounts, addTransaction, logAudit, members, addNotification, isDemoMode]);
 
   // Action: Approve Request
   const approveRequest = useCallback((requestId: string, reviewComment?: string) => {
@@ -410,6 +592,11 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
       comment: reviewComment,
     });
 
+    // Supabase PostgreSQL approval
+    if (!isDemoMode && family.id && !family.id.startsWith('fam-demo')) {
+      supabaseDataService.reviewExpenseRequest(requestId, 'approved', currentMember.user_id, reviewComment);
+    }
+
     // Notify requester
     addNotification(
       req.requested_by,
@@ -417,7 +604,17 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
       `Request Approved: ${req.title}`,
       `Your request for ₹${(req.amount / 100).toLocaleString('en-IN')} was approved by ${currentMember.user.name}.`
     );
-  }, [requests, currentMember, addTransaction, accounts, logAudit, addNotification]);
+
+    try {
+      getFamilyChannel(family.id).publish('request.approved', {
+        id: requestId,
+        reviewed_by: currentMember.user_id,
+        reviewer_name: currentMember.user.name,
+      });
+    } catch (err) {
+      console.warn('Realtime publish warning:', err);
+    }
+  }, [requests, currentMember, addTransaction, accounts, logAudit, addNotification, family.id, isDemoMode]);
 
   // Action: Reject Request
   const rejectRequest = useCallback((requestId: string, reviewComment?: string) => {
@@ -450,7 +647,17 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
       `Request Declined: ${req.title}`,
       `Your request for ₹${(req.amount / 100).toLocaleString('en-IN')} was rejected by ${currentMember.user.name}. Reason: ${reviewComment || 'Not approved'}.`
     );
-  }, [requests, currentMember, logAudit, addNotification]);
+
+    try {
+      getFamilyChannel(family.id).publish('request.rejected', {
+        id: requestId,
+        reviewed_by: currentMember.user_id,
+        reviewer_name: currentMember.user.name,
+      });
+    } catch (err) {
+      console.warn('Realtime publish warning:', err);
+    }
+  }, [requests, currentMember, logAudit, addNotification, family.id]);
 
   // Action: Contribute to Goal
   const contributeToGoal = useCallback((goalId: string, amountPaise: number) => {
@@ -486,6 +693,7 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
 
   // Action: Update Budget Category
   const updateBudgetCategory = useCallback((categoryId: string, amountPaise: number) => {
+    if (checkReadOnly()) return;
     setBudget(prev => {
       let found = false;
       const updatedCats = prev.categories.map(c => {
@@ -516,10 +724,11 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
     });
 
     logAudit('BUDGET_CATEGORY_UPDATED', 'budget', categoryId, { amount: amountPaise });
-  }, [logAudit]);
+  }, [logAudit, checkReadOnly]);
 
   // Action: Update Member Limit
   const updateMemberLimit = useCallback((memberId: string, limitPaise: number) => {
+    if (checkReadOnly()) return;
     setMembers(prev => prev.map(m => {
       if (m.id === memberId) {
         return { ...m, monthly_spending_limit: limitPaise };
@@ -527,14 +736,15 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
       return m;
     }));
     logAudit('MEMBER_LIMIT_UPDATED', 'member', memberId, { limit: limitPaise });
-  }, [logAudit]);
+  }, [logAudit, checkReadOnly]);
 
   // Action: Update Member Role
   const updateMemberRole = useCallback((memberId: string, newRole: SystemRoleType) => {
+    if (checkReadOnly()) return;
     // Prevent removing the last Family Head
-    const headCount = members.filter(m => m.role === 'FAMILY_HEAD').length;
+    const headCount = members.filter(m => m.role === 'FAMILY_HEAD' || m.role === 'family_head').length;
     const target = members.find(m => m.id === memberId);
-    if (target?.role === 'FAMILY_HEAD' && newRole !== 'FAMILY_HEAD' && headCount <= 1) {
+    if ((target?.role === 'FAMILY_HEAD' || target?.role === 'family_head') && newRole !== 'FAMILY_HEAD' && newRole !== 'family_head' && headCount <= 1) {
       alert('Cannot change the role of the only Family Head. Transfer ownership first.');
       return;
     }
@@ -546,7 +756,7 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
       return m;
     }));
     logAudit('MEMBER_ROLE_UPDATED', 'member', memberId, { newRole });
-  }, [members, logAudit]);
+  }, [members, logAudit, checkReadOnly]);
 
   // Action: Toggle Member Custom Permission
   const toggleMemberPermission = useCallback((memberId: string, perm: PermissionKey, allowed: boolean) => {
@@ -563,6 +773,62 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
       return m;
     }));
     logAudit('MEMBER_PERMISSION_OVERRIDE', 'permission', memberId, { perm, allowed });
+  }, [logAudit]);
+
+  // Action: Grant All Permissions to Member
+  const grantAllMemberPermissions = useCallback((memberId: string) => {
+    const allPerms: Partial<Record<PermissionKey, boolean>> = {};
+    SYSTEM_PERMISSIONS.forEach(p => {
+      allPerms[p.key] = true;
+    });
+    setMembers(prev => prev.map(m => {
+      if (m.id === memberId) {
+        return {
+          ...m,
+          custom_permissions: {
+            ...m.custom_permissions,
+            ...allPerms,
+          },
+        };
+      }
+      return m;
+    }));
+    logAudit('MEMBER_PERMISSIONS_GRANT_ALL', 'permission', memberId);
+  }, [logAudit]);
+
+  // Action: Revoke All Permissions from Member
+  const revokeAllMemberPermissions = useCallback((memberId: string) => {
+    const noPerms: Partial<Record<PermissionKey, boolean>> = {};
+    SYSTEM_PERMISSIONS.forEach(p => {
+      noPerms[p.key] = false;
+    });
+    setMembers(prev => prev.map(m => {
+      if (m.id === memberId) {
+        return {
+          ...m,
+          custom_permissions: {
+            ...m.custom_permissions,
+            ...noPerms,
+          },
+        };
+      }
+      return m;
+    }));
+    logAudit('MEMBER_PERMISSIONS_REVOKE_ALL', 'permission', memberId);
+  }, [logAudit]);
+
+  // Action: Reset Member Overrides to System Role Defaults
+  const resetMemberPermissions = useCallback((memberId: string) => {
+    setMembers(prev => prev.map(m => {
+      if (m.id === memberId) {
+        return {
+          ...m,
+          custom_permissions: {},
+        };
+      }
+      return m;
+    }));
+    logAudit('MEMBER_PERMISSIONS_RESET_DEFAULTS', 'permission', memberId);
   }, [logAudit]);
 
   // Action: Invite Member
@@ -687,15 +953,77 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
 
   // Action: Remove Member
   const removeMember = useCallback((memberId: string) => {
+    if (checkReadOnly()) return;
     const target = members.find(m => m.id === memberId);
     if (!target) return;
-    if (target.role === 'FAMILY_HEAD') {
+    if (target.role === 'FAMILY_HEAD' || target.role === 'family_head') {
       alert('Cannot remove a Family Head. Transfer ownership first.');
       return;
     }
     setMembers(prev => prev.filter(m => m.id !== memberId));
     logAudit('MEMBER_REMOVED', 'member', memberId, { name: target.user.name });
-  }, [members, logAudit]);
+
+    try {
+      getFamilyChannel(family.id).publish('member.removed', {
+        member_id: memberId,
+        name: target.user.name,
+      });
+    } catch (err) {
+      console.warn('Realtime publish warning:', err);
+    }
+  }, [members, logAudit, checkReadOnly, family.id]);
+
+  // Action: Create Custom Role
+  const createRole = useCallback((roleName: string, description: string): RoleDefinition => {
+    const roleKey = `role-${roleName.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${Date.now()}`;
+    const newRole: RoleDefinition = {
+      id: roleKey,
+      name: roleName,
+      description: description || 'Custom family role with customized financial access',
+      is_custom: true,
+      default_permissions: [
+        'transactions.create',
+        'transactions.view',
+        'requests.create',
+        'notifications.receive',
+        'family.view',
+      ],
+      permissions: {
+        can_view_all_transactions: false,
+        can_add_transactions: true,
+        can_edit_transactions: false,
+        can_delete_transactions: false,
+        can_manage_budgets: false,
+        can_manage_goals: false,
+        can_manage_members: false,
+        can_view_reports: false,
+        can_export_data: false,
+        can_manage_accounts: false,
+        can_request_expenses: true,
+        can_approve_requests: false,
+        max_transaction_amount: 500000,
+        monthly_spending_limit: 1000000,
+      },
+    };
+    setRoles(prev => [...prev, newRole]);
+    logAudit('ROLE_CREATED', 'role', roleKey, { roleName, description });
+    return newRole;
+  }, [logAudit]);
+
+  // Action: Update Member Sharing Preferences
+  const updateMemberSharing = useCallback((memberId: string, incomeSharing: boolean, expenseSharing: boolean) => {
+    setMembers(prev => prev.map(m => {
+      if (m.id === memberId) {
+        return {
+          ...m,
+          income_sharing_enabled: incomeSharing,
+          expense_sharing_enabled: expenseSharing,
+        };
+      }
+      return m;
+    }));
+    logAudit('MEMBER_SHARING_UPDATED', 'member', memberId, { incomeSharing, expenseSharing });
+  }, [logAudit]);
 
   // Notification actions
   const markNotificationRead = useCallback((id: string) => {
@@ -708,6 +1036,7 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
 
   // Inter-Account Transfer Action
   const transferFunds = useCallback((fromAccountId: string, toAccountId: string, amountPaise: number, description: string) => {
+    if (checkReadOnly()) return;
     if (fromAccountId === toAccountId || amountPaise <= 0) return;
 
     setAccounts(prev => prev.map(acc => {
@@ -910,7 +1239,18 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
   }, [currentMember.user_id, family.id, logAudit, recurring]);
 
   // Action: Update User Profile
-  const updateUserProfile = useCallback((name: string, email: string, avatarUrl?: string) => {
+  const updateUserProfile = useCallback((
+    name: string,
+    email: string,
+    avatarUrl?: string,
+    extra?: {
+      phone?: string;
+      date_of_birth?: string;
+      gender?: string;
+      location?: string;
+      bio?: string;
+    }
+  ) => {
     setMembers(prev => prev.map(m => {
       if (m.id === currentMemberId) {
         return {
@@ -919,13 +1259,18 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
             ...m.user,
             name,
             email,
-            avatar_url: avatarUrl || m.user.avatar_url,
+            avatar_url: avatarUrl !== undefined ? avatarUrl : m.user.avatar_url,
+            phone: extra?.phone !== undefined ? extra.phone : m.user.phone,
+            date_of_birth: extra?.date_of_birth !== undefined ? extra.date_of_birth : m.user.date_of_birth,
+            gender: extra?.gender !== undefined ? extra.gender : m.user.gender,
+            location: extra?.location !== undefined ? extra.location : m.user.location,
+            bio: extra?.bio !== undefined ? extra.bio : m.user.bio,
           },
         };
       }
       return m;
     }));
-    logAudit('PROFILE_UPDATED', 'user', currentMember.user_id, { name, email });
+    logAudit('PROFILE_UPDATED', 'user', currentMember.user_id, { name, email, ...extra });
   }, [currentMember.user_id, currentMemberId, logAudit]);
 
   // Action: Update Family Name (Restricted strictly to FAMILY_HEAD and CO_MANAGER)
@@ -1181,6 +1526,8 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
     setInvestments([]);
     setSharedExpenses([]);
 
+    setIsDemoMode(false);
+    saveStorage('is_demo_mode', false);
     saveStorage('family', newFamily);
     saveStorage('members', [newHeadMember]);
     saveStorage('active_member_id', memId);
@@ -1194,7 +1541,8 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
   const loadDemoFamilyWorkspace = useCallback(() => {
     setFamily(DEMO_FAMILY);
     setMembers(DEMO_MEMBERS);
-    setCurrentMemberId('mem-arun');
+    setCurrentMemberId('mem-raj');
+    setIsDemoMode(true);
     setAccounts(DEMO_ACCOUNTS);
     setTransactions(DEMO_TRANSACTIONS);
     setBudget(DEMO_BUDGET);
@@ -1209,7 +1557,8 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
 
     saveStorage('family', DEMO_FAMILY);
     saveStorage('members', DEMO_MEMBERS);
-    saveStorage('active_member_id', 'mem-arun');
+    saveStorage('active_member_id', 'mem-raj');
+    saveStorage('is_demo_mode', true);
     saveStorage('accounts', DEMO_ACCOUNTS);
     saveStorage('transactions', DEMO_TRANSACTIONS);
 
@@ -1297,11 +1646,12 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
         family,
         members,
         currentMember,
-        roles: ROLE_DEFINITIONS,
         categories,
         accounts,
         transactions,
+        summary,
         budget,
+        roles,
         savingsGoals,
         requests,
         recurring,
@@ -1334,10 +1684,15 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
         updateMemberLimit,
         updateMemberRole,
         toggleMemberPermission,
+        grantAllMemberPermissions,
+        revokeAllMemberPermissions,
+        resetMemberPermissions,
         inviteMember,
         createInvitation,
         revokeInvitation,
         removeMember,
+        createRole,
+        updateMemberSharing,
         markNotificationRead,
         markAllNotificationsRead,
         addLoan,
@@ -1357,6 +1712,7 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
         lookupInvitation,
         acceptInvitation,
         loadDemoFamilyWorkspace,
+        isDemoMode,
       }}
     >
       {children}

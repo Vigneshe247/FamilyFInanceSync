@@ -12,8 +12,26 @@
    ========================================================= */
 
 import React, { useState, useRef, useEffect } from 'react';
+import { useAuth } from '../../context/AuthContext';
 import { useFamilyFinance } from '../../context/FamilyFinanceContext';
 import { supabaseAuthService } from '../../services/supabase';
+import {
+  registerUser,
+  loginUser,
+  loginWithGoogle,
+  resetPassword,
+  resendVerificationEmail,
+  checkEmailVerification,
+  getFirebaseErrorMessage,
+} from '../../firebase/authService';
+import {
+  signInWithGoogle,
+  linkGoogleToCurrentUser,
+  linkConflictingAccount,
+  unlinkGoogleFromCurrentUser,
+  isGoogleLinked,
+  loginWithEmail,
+} from '../../services/firebase';
 import {
   ShieldCheck,
   User,
@@ -60,17 +78,26 @@ export const AuthUserModal: React.FC<AuthUserModalProps> = ({ isOpen, onClose })
     family,
   } = useFamilyFinance();
 
+  const { user: authUser } = useAuth();
+  const [demoAuthPrompt, setDemoAuthPrompt] = useState(false);
+
   // Primary Navigation Sub-Views
   const [activeView, setActiveView] = useState<
     | 'login'
     | 'register_step1'
     | 'register_step2'
     | 'register_step3'
+    | 'verify_email'
     | 'create_family_wizard'
     | 'join_family_flow'
     | 'forgot'
     | 'profile'
   >('login');
+
+  // --- EMAIL VERIFICATION STATE ---
+  const [verifyChecking, setVerifyChecking] = useState(false);
+  const [verifyMsg, setVerifyMsg] = useState('');
+  const [verifyResent, setVerifyResent] = useState(false);
 
   // --- LOGIN FORM STATE ---
   const [loginEmailOrPhone, setLoginEmailOrPhone] = useState('');
@@ -80,6 +107,11 @@ export const AuthUserModal: React.FC<AuthUserModalProps> = ({ isOpen, onClose })
   const [capsLockOn, setCapsLockOn] = useState(false);
   const [loginSubmitting, setLoginSubmitting] = useState(false);
   const [loginError, setLoginError] = useState('');
+
+  // Firebase Google Auth & Account Linking State
+  const [pendingGoogleCredential, setPendingGoogleCredential] = useState<any>(null);
+  const [googleLinked, setGoogleLinked] = useState<boolean>(() => isGoogleLinked());
+  const [linkFeedbackMsg, setLinkFeedbackMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // --- REGISTRATION STEP 1 STATE ---
   const [firstName, setFirstName] = useState('');
@@ -176,32 +208,68 @@ export const AuthUserModal: React.FC<AuthUserModalProps> = ({ isOpen, onClose })
     setLoginSubmitting(true);
 
     if (!loginEmailOrPhone.trim() || !loginPassword) {
-      setLoginError('Please enter a valid email/phone and password.');
+      setLoginError('Please enter your email address and password.');
       setLoginSubmitting(false);
       return;
     }
 
-    // Call Supabase Auth Client
-    const res = await supabaseAuthService.signInWithPassword(loginEmailOrPhone, loginPassword);
-    setLoginSubmitting(false);
-
-    if (!res.success && !loginEmailOrPhone.includes('demo')) {
-      // Show error but allow seamless session for demo workspace
-      setLoginError(res.error || 'Authentication failed. Please check credentials.');
+    try {
+      const user = await loginUser(loginEmailOrPhone, loginPassword);
+      await user.reload();
+      if (!user.emailVerified) {
+        setRegEmail(user.email || loginEmailOrPhone);
+        setActiveView('verify_email');
+        setLoginSubmitting(false);
+        return;
+      }
+      setActiveView('profile');
+    } catch (error: any) {
+      console.error('Login error:', error);
+      setLoginError(getFirebaseErrorMessage(error));
+    } finally {
+      setLoginSubmitting(false);
     }
-
-    // Switch view to Profile / Logged In State
-    setActiveView('profile');
   };
 
   const handleGoogleAuth = async () => {
     setLoginSubmitting(true);
-    await supabaseAuthService.signInWithGoogle();
-    setLoginSubmitting(false);
-    setActiveView('profile');
+    setLoginError('');
+
+    try {
+      await loginWithGoogle();
+      setGoogleLinked(true);
+      setActiveView('profile');
+    } catch (error: any) {
+      console.error('Google Sign-In error:', error);
+      setLoginError(getFirebaseErrorMessage(error));
+    } finally {
+      setLoginSubmitting(false);
+    }
   };
 
-  const handleRegStep1Submit = (e: React.FormEvent) => {
+  const handleLinkGoogle = async () => {
+    setLinkFeedbackMsg(null);
+    const res = await linkGoogleToCurrentUser();
+    if (res.success) {
+      setGoogleLinked(true);
+      setLinkFeedbackMsg({ type: 'success', text: 'Google account linked successfully!' });
+    } else {
+      setLinkFeedbackMsg({ type: 'error', text: res.error || 'Failed to link Google account.' });
+    }
+  };
+
+  const handleUnlinkGoogle = async () => {
+    setLinkFeedbackMsg(null);
+    const res = await unlinkGoogleFromCurrentUser();
+    if (res.success) {
+      setGoogleLinked(false);
+      setLinkFeedbackMsg({ type: 'success', text: 'Google account unlinked successfully.' });
+    } else {
+      setLinkFeedbackMsg({ type: 'error', text: res.error || 'Failed to unlink Google account.' });
+    }
+  };
+
+  const handleRegStep1Submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setRegError('');
     if (!firstName.trim() || !regEmail.trim()) {
@@ -213,21 +281,60 @@ export const AuthUserModal: React.FC<AuthUserModalProps> = ({ isOpen, onClose })
       return;
     }
     if (!agreeTerms) {
-      setRegError('You must agree to the Terms & Privacy Policy.');
+      setRegError('Please accept the Terms & Privacy Policy.');
       return;
     }
 
-    // Trigger Supabase Registration
-    supabaseAuthService.signUp(regEmail, regPassword, {
-      first_name: firstName,
-      last_name: lastName,
-      mobile: regMobile,
-    });
+    try {
+      setLoginSubmitting(true);
+      await registerUser({
+        firstName,
+        lastName,
+        email: regEmail,
+        password: regPassword,
+        mobile: regMobile,
+      });
 
-    // Move to Verification Step 2
-    setActiveView('register_step2');
-    setOtpTimer(30);
-    setCanResendOtp(false);
+      // Move directly to dedicated email verification screen
+      setActiveView('verify_email');
+    } catch (error: any) {
+      console.error('Registration error:', error);
+      setRegError(getFirebaseErrorMessage(error));
+    } finally {
+      setLoginSubmitting(false);
+    }
+  };
+
+  const handleCheckVerification = async () => {
+    try {
+      setVerifyChecking(true);
+      setVerifyMsg('');
+      const isVerified = await checkEmailVerification();
+      if (isVerified) {
+        setVerifyMsg('Email verified successfully! Opening workspace...');
+        setTimeout(() => {
+          setActiveView('profile');
+          onClose();
+        }, 1200);
+      } else {
+        setVerifyMsg('Email is not verified yet. Check your inbox and click the verification link.');
+      }
+    } catch (error: any) {
+      setVerifyMsg(getFirebaseErrorMessage(error));
+    } finally {
+      setVerifyChecking(false);
+    }
+  };
+
+  const handleResendEmailVerification = async () => {
+    try {
+      await resendVerificationEmail();
+      setVerifyResent(true);
+      setVerifyMsg('Verification email sent! Check your inbox.');
+      setTimeout(() => setVerifyResent(false), 30000);
+    } catch (error: any) {
+      setVerifyMsg(getFirebaseErrorMessage(error));
+    }
   };
 
   const handleVerifyOtp = (e: React.FormEvent) => {
@@ -271,9 +378,14 @@ export const AuthUserModal: React.FC<AuthUserModalProps> = ({ isOpen, onClose })
   const handleForgotSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!forgotEmail.trim()) return;
-    setForgotMsg('Password reset link sent to your registered email.');
-    await supabaseAuthService.resetPasswordForEmail(forgotEmail);
-    setForgotStep('sent');
+    try {
+      setForgotMsg('');
+      await resetPassword(forgotEmail);
+      setForgotMsg('Password reset email sent. Check your inbox.');
+      setForgotStep('sent');
+    } catch (error: any) {
+      setForgotMsg(getFirebaseErrorMessage(error));
+    }
   };
 
   const handleResetPasswordFinal = (e: React.FormEvent) => {
@@ -513,14 +625,14 @@ export const AuthUserModal: React.FC<AuthUserModalProps> = ({ isOpen, onClose })
                   )}
 
                   <form onSubmit={handleLoginSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                    {/* Email / Mobile */}
+                    {/* Email Address */}
                     <div>
-                      <label className="label" style={{ fontSize: '0.78rem', fontWeight: 600 }}>Email / Phone</label>
+                      <label className="label" style={{ fontSize: '0.78rem', fontWeight: 600 }}>EMAIL ADDRESS</label>
                       <div style={{ position: 'relative' }}>
                         <input
-                          type="text"
+                          type="email"
                           className="input"
-                          placeholder="Enter email or mobile number"
+                          placeholder="Enter your email address"
                           value={loginEmailOrPhone}
                           onChange={e => setLoginEmailOrPhone(e.target.value)}
                           style={{ paddingLeft: '2.5rem' }}
@@ -630,6 +742,10 @@ export const AuthUserModal: React.FC<AuthUserModalProps> = ({ isOpen, onClose })
                     <button
                       type="button"
                       onClick={() => {
+                        if (!authUser) {
+                          setDemoAuthPrompt(true);
+                          return;
+                        }
                         loadDemoFamilyWorkspace();
                         onClose();
                       }}
@@ -648,8 +764,52 @@ export const AuthUserModal: React.FC<AuthUserModalProps> = ({ isOpen, onClose })
                         gap: '0.4rem',
                       }}
                     >
-                      <Sparkles size={14} /> Explore Demo Family (Testing Mode)
+                      <Sparkles size={14} /> Explore Demo Family
                     </button>
+
+                    {demoAuthPrompt && (
+                      <div
+                        style={{
+                          marginTop: '0.85rem',
+                          padding: '0.85rem',
+                          borderRadius: '12px',
+                          background: 'rgba(217, 119, 6, 0.1)',
+                          border: '1px solid rgba(217, 119, 6, 0.3)',
+                          textAlign: 'center',
+                        }}
+                      >
+                        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#D97706', marginBottom: '0.25rem' }}>
+                          Authentication Required
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.65rem' }}>
+                          Create an account or sign in to explore the Demo Family.
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDemoAuthPrompt(false);
+                              setActiveView('register_step1');
+                            }}
+                            className="btn btn-primary"
+                            style={{ fontSize: '0.72rem', padding: '0.35rem 0.65rem' }}
+                          >
+                            Create Account
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDemoAuthPrompt(false);
+                              setActiveView('login');
+                            }}
+                            className="btn btn-secondary"
+                            style={{ fontSize: '0.72rem', padding: '0.35rem 0.65rem' }}
+                          >
+                            Sign In
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -795,6 +955,117 @@ export const AuthUserModal: React.FC<AuthUserModalProps> = ({ isOpen, onClose })
                       Create Account
                     </button>
                   </form>
+                </div>
+              )}
+
+              {/* =========================================================
+                  VIEW: DEDICATED EMAIL VERIFICATION CARD (Section 16)
+                 ========================================================= */}
+              {activeView === 'verify_email' && (
+                <div style={{ textAlign: 'center', padding: '1rem 0' }}>
+                  <div
+                    style={{
+                      width: 56,
+                      height: 56,
+                      borderRadius: '50%',
+                      background: 'var(--mint-pill)',
+                      color: 'var(--mint-primary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      margin: '0 auto 1.25rem',
+                      fontSize: '1.75rem',
+                    }}
+                  >
+                    ✉
+                  </div>
+
+                  <h3 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-main)', margin: '0 0 0.5rem' }}>
+                    Verify your email
+                  </h3>
+
+                  <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: '0 0 0.35rem' }}>
+                    We sent a verification link to:
+                  </p>
+
+                  <div
+                    style={{
+                      display: 'inline-block',
+                      background: 'var(--bg-canvas-subtle)',
+                      border: '1px solid var(--border-card)',
+                      padding: '0.4rem 1rem',
+                      borderRadius: '8px',
+                      fontWeight: 700,
+                      fontSize: '0.88rem',
+                      color: 'var(--text-main)',
+                      marginBottom: '1rem',
+                    }}
+                  >
+                    {regEmail || loginEmailOrPhone || 'your registered email'}
+                  </div>
+
+                  <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '1.5rem', lineHeight: 1.4 }}>
+                    Check your inbox and click the verification link.
+                  </p>
+
+                  {verifyMsg && (
+                    <div
+                      style={{
+                        background: verifyMsg.includes('success') ? 'var(--mint-pill)' : 'rgba(235, 87, 87, 0.1)',
+                        color: verifyMsg.includes('success') ? 'var(--mint-primary)' : '#EB5757',
+                        padding: '0.65rem 0.85rem',
+                        borderRadius: '12px',
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                        marginBottom: '1.25rem',
+                        border: '1px solid currentColor',
+                      }}
+                    >
+                      {verifyMsg}
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    <button
+                      type="button"
+                      onClick={handleCheckVerification}
+                      disabled={verifyChecking}
+                      className="btn btn-primary"
+                      style={{ width: '100%', justifyContent: 'center', fontWeight: 700, padding: '0.75rem' }}
+                    >
+                      {verifyChecking ? 'Checking status...' : "I've Verified My Email"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleResendEmailVerification}
+                      disabled={verifyResent}
+                      className="btn btn-secondary"
+                      style={{ width: '100%', justifyContent: 'center', fontWeight: 600 }}
+                    >
+                      {verifyResent ? 'Verification Sent!' : 'Resend Verification Email'}
+                    </button>
+                  </div>
+
+                  <div style={{ marginTop: '1.25rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    Didn't receive it? Check spam.
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveView('login')}
+                    style={{
+                      marginTop: '1.25rem',
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--mint-primary)',
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    ← Back to Sign In
+                  </button>
                 </div>
               )}
 
@@ -1487,6 +1758,105 @@ export const AuthUserModal: React.FC<AuthUserModalProps> = ({ isOpen, onClose })
                       Save Profile Updates
                     </button>
                   </form>
+
+                  {/* Linked Providers / Social Sign-In Section */}
+                  <div style={{ marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid var(--border-card)' }}>
+                    <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.25rem' }}>
+                      Linked Sign-In Providers
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.65rem' }}>
+                      Manage authentication methods linked to your account (financesync-4568b)
+                    </div>
+
+                    {linkFeedbackMsg && (
+                      <div
+                        style={{
+                          padding: '0.5rem 0.75rem',
+                          borderRadius: '8px',
+                          fontSize: '0.72rem',
+                          fontWeight: 600,
+                          marginBottom: '0.65rem',
+                          background: linkFeedbackMsg.type === 'success' ? 'var(--mint-pill)' : '#FEF2F2',
+                          color: linkFeedbackMsg.type === 'success' ? 'var(--mint-primary)' : '#DC2626',
+                          border: `1px solid ${linkFeedbackMsg.type === 'success' ? 'rgba(34, 160, 91, 0.3)' : 'rgba(220, 38, 38, 0.3)'}`,
+                        }}
+                      >
+                        {linkFeedbackMsg.text}
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                      {/* Email Provider */}
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '0.65rem 0.85rem',
+                          borderRadius: '10px',
+                          background: 'var(--bg-canvas)',
+                          border: '1px solid var(--border-card)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                          <Mail size={16} color="var(--mint-primary)" />
+                          <div>
+                            <div style={{ fontSize: '0.78rem', fontWeight: 700 }}>Email / Password</div>
+                            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{currentMember.user.email}</div>
+                          </div>
+                        </div>
+                        <span className="badge badge-sage" style={{ fontSize: '0.65rem' }}>PRIMARY</span>
+                      </div>
+
+                      {/* Google Provider */}
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '0.65rem 0.85rem',
+                          borderRadius: '10px',
+                          background: 'var(--bg-canvas)',
+                          border: '1px solid var(--border-card)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                          <svg width="18" height="18" viewBox="0 0 24 24">
+                            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                          </svg>
+                          <div>
+                            <div style={{ fontSize: '0.78rem', fontWeight: 700 }}>Google Sign-In</div>
+                            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                              {googleLinked ? 'Connected (google.com)' : 'Not linked'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {googleLinked ? (
+                          <button
+                            type="button"
+                            onClick={handleUnlinkGoogle}
+                            className="btn btn-secondary btn-sm"
+                            style={{ fontSize: '0.68rem', color: 'var(--rust)', borderColor: 'rgba(192, 57, 43, 0.3)' }}
+                          >
+                            Unlink Google
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={handleLinkGoogle}
+                            className="btn btn-secondary btn-sm"
+                            style={{ fontSize: '0.68rem', color: 'var(--sky-accent)', borderColor: 'rgba(62, 139, 245, 0.4)' }}
+                          >
+                            Link Google
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

@@ -1023,3 +1023,137 @@ html, body {
   border-bottom-left-radius: 24px;
   border-bottom-right-radius: 24px;
 }
+
+/* =========================================================
+   AUTH FORMS & TEXTBOX AREA (Guaranteed Crisp Light Appearance)
+   Prevents dark/charcoal user-agent styles in dark OS modes
+   ========================================================= */
+.auth-card input,
+.auth-card select,
+.auth-card textarea {
+  background-color: #FFFFFF !important;
+  background: #FFFFFF !important;
+  color: #111827 !important;
+  color-scheme: light !important;
+  border: 1.5px solid #D1D5DB !important;
+  border-radius: 10px !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+  transition: all 0.2s ease !important;
+}
+
+.auth-card select option {
+  background-color: #FFFFFF !important;
+  color: #111827 !important;
+}
+
+.auth-card input::placeholder,
+.auth-card textarea::placeholder {
+  color: #9CA3AF !important;
+  opacity: 1 !important;
+}
+
+.auth-card input:focus,
+.auth-card select:focus,
+.auth-card textarea:focus {
+  border-color: #059669 !important;
+  box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.2) !important;
+  background-color: #FFFFFF !important;
+  background: #FFFFFF !important;
+  outline: none !important;
+}
+
+/* Autofill override: prevents browser from turning text box yellow/blue/dark */
+.auth-card input:-webkit-autofill,
+.auth-card input:-webkit-autofill:hover,
+.auth-card input:-webkit-autofill:focus,
+.auth-card input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px #FFFFFF inset !important;
+  -webkit-text-fill-color: #111827 !important;
+  box-shadow: 0 0 0 1000px #FFFFFF inset !important;
+  border: 1.5px solid #059669 !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+.auth-card input[type="checkbox"] {
+  accent-color: #059669 !important;
+  background-color: #FFFFFF !important;
+  cursor: pointer;
+}
+
+/* =========================================================
+   CALENDAR & DATE PICKER (Highlighted Light Background & Icon)
+   ========================================================= */
+input[type="date"] {
+  color-scheme: light !important;
+  background-color: #FFFFFF !important;
+  background: #FFFFFF !important;
+  color: #111827 !important;
+  border: 1.5px solid #D1D5DB !important;
+  border-radius: 10px !important;
+  font-family: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: all 0.2s ease;
+}
+
+input[type="date"]:hover {
+  border-color: #10B981 !important;
+  background-color: #F9FCFA !important;
+}
+
+input[type="date"]:focus {
+  border-color: #059669 !important;
+  background-color: #FFFFFF !important;
+  box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.2) !important;
+  outline: none;
+}
+
+/* Calendar Indicator Icon Styling */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 4px 6px;
+  background-color: #ECFDF5;
+  border: 1px solid #A7F3D0;
+  /* Emerald tint for calendar picker icon */
+  filter: invert(42%) sepia(85%) saturate(460%) hue-rotate(120deg) brightness(88%) contrast(92%);
+  transition: all 0.2s ease;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  background-color: #D1FAE5;
+  border-color: #059669;
+  transform: scale(1.08);
+  box-shadow: 0 2px 8px rgba(5, 150, 105, 0.2);
+}
+
+/* Enhanced Highlighted Light Container for Calendar Date Selection */
+.calendar-highlight-area {
+  background: #F0FDF4 !important;
+  border: 1.5px solid #A7F3D0 !important;
+  border-radius: 14px !important;
+  padding: 0.65rem 0.85rem !important;
+  box-shadow: 0 2px 8px rgba(5, 150, 105, 0.06) !important;
+  transition: all 0.2s ease;
+}
+
+.calendar-highlight-area:hover {
+  border-color: #34D399 !important;
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.1) !important;
+}
+
+.calendar-highlight-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: #ECFDF5;
+  color: #065F46;
+  border: 1px solid #A7F3D0;
+  padding: 0.3rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+

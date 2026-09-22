@@ -1,11 +1,15 @@
 /* =========================================================
-   NEW EXPENSE REQUEST MODAL (Section 16)
+   NEW FAMILY MEMBER REQUEST MODAL
+   Section 20 & 21
+   Support: Permission request, Expense correction, Income correction,
+   Add member, Remove member, Expense approval, Custom request
    ========================================================= */
 
 import React, { useState, useEffect } from 'react';
 import { useFamilyFinance } from '../../context/FamilyFinanceContext';
 import { rupeesToPaise } from '../../utils/currency';
-import { X, Send, AlertCircle, Sparkles } from 'lucide-react';
+import { X, Send, AlertCircle, FileText, Tag, HelpCircle } from 'lucide-react';
+import { ExpenseRequest } from '../../types';
 
 interface NewRequestModalProps {
   isOpen: boolean;
@@ -25,6 +29,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
 }) => {
   const { categories, currentMember, createRequest } = useFamilyFinance();
 
+  const [requestType, setRequestType] = useState<NonNullable<ExpenseRequest['request_type']>>('permission_request');
   const [title, setTitle] = useState('');
   const [amountRupees, setAmountRupees] = useState('');
   const [categoryId, setCategoryId] = useState(categories[0]?.id || '');
@@ -36,125 +41,152 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
       setAmountRupees(initialData.amountRupees);
       if (initialData.categoryId) setCategoryId(initialData.categoryId);
       setDescription(initialData.description);
+      setRequestType('expense_approval');
     }
   }, [initialData]);
 
   if (!isOpen) return null;
 
-  const isChild = currentMember.role === 'CHILD';
-  const numericAmount = parseFloat(amountRupees) || 0;
-  const isAutoApproved = !isChild && numericAmount > 0 && numericAmount <= 500;
+  const isFinancialType = requestType === 'expense_approval' || requestType === 'expense_correction' || requestType === 'income_correction';
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const paise = rupeesToPaise(amountRupees);
-    if (paise <= 0 || !title.trim()) return;
+    const paise = isFinancialType ? rupeesToPaise(amountRupees || '0') : 0;
+    if (!title.trim() && !description.trim()) return;
 
     createRequest({
-      title: title.trim(),
+      title: title.trim() || `${requestType.replace('_', ' ').toUpperCase()} from ${currentMember.user.name}`,
       amount: paise,
-      category_id: categoryId,
+      category_id: categoryId || categories[0]?.id || 'cat-general',
       description: description.trim() || 'No additional note provided.',
+      request_type: requestType,
     });
 
     onClose();
     setTitle('');
     setAmountRupees('');
     setDescription('');
+    setRequestType('permission_request');
   };
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-content" onClick={e => e.stopPropagation()}>
+      <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px' }}>
         <div className="modal-header">
-          <h3 style={{ fontSize: '1.2rem', fontWeight: 700 }}>
-            {isChild ? 'Ask Family Head for an Expense' : 'Submit Expense Request for Approval'}
-          </h3>
-          <button className="btn btn-icon btn-sm" onClick={onClose}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Send size={18} color="var(--primary)" />
+            <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>
+              Request to Family Head
+            </h3>
+          </div>
+          <button className="btn btn-icon btn-sm" onClick={onClose} aria-label="Close">
             <X size={16} />
           </button>
         </div>
 
         <form onSubmit={handleSubmit}>
           <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1.15rem' }}>
-            {/* Rule Note */}
-            <div
-              style={{
-                padding: '0.75rem 0.95rem',
-                borderRadius: 'var(--radius-sm)',
-                background: isAutoApproved ? 'var(--sage-light)' : 'var(--paper-dim)',
-                border: '1px solid var(--line)',
-                fontSize: '0.8rem',
-                color: isAutoApproved ? 'var(--sage)' : 'var(--ink-muted)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-              }}
-            >
-              <AlertCircle size={16} />
-              <span>
-                {isChild
-                  ? 'All child requests require review by the Family Head or Co-Manager.'
-                  : isAutoApproved
-                  ? '✓ Under ₹500 rule: This request will be instantly auto-approved!'
-                  : numericAmount > 2000
-                  ? 'Requires Family Head authorization (> ₹2,000 threshold).'
-                  : 'Can be reviewed and approved by Family Head or Co-Manager.'}
-              </span>
+            {/* Request Type Selector (Section 20) */}
+            <div>
+              <label className="label" style={{ fontWeight: 600 }}>Request Type</label>
+              <select
+                className="select"
+                value={requestType}
+                onChange={e => setRequestType(e.target.value as NonNullable<ExpenseRequest['request_type']>)}
+              >
+                <option value="permission_request">Permission Request</option>
+                <option value="expense_approval">Expense Approval</option>
+                <option value="expense_correction">Expense Correction</option>
+                <option value="income_correction">Income Correction</option>
+                <option value="add_family_member">Add Family Member</option>
+                <option value="remove_family_member">Remove Family Member</option>
+                <option value="custom_request">Custom Request</option>
+              </select>
             </div>
 
+            {/* Title / Summary */}
             <div>
-              <label className="label">Item Name / Expense Title</label>
+              <label className="label" style={{ fontWeight: 600 }}>Request Title / Topic</label>
               <input
                 type="text"
                 className="input"
+                placeholder={
+                  requestType === 'permission_request'
+                    ? 'e.g. Permission to view family monthly summary'
+                    : requestType === 'expense_approval'
+                    ? 'e.g. Science Project Textbook'
+                    : 'e.g. Correct duplicate transaction from yesterday'
+                }
                 value={title}
                 onChange={e => setTitle(e.target.value)}
-                placeholder="e.g. New School Bag, Certification Exam, Sports Shoes"
                 required
                 autoFocus
               />
             </div>
 
-            <div>
-              <label className="label">Amount (₹ INR)</label>
-              <input
-                type="number"
-                step="any"
-                className="input"
-                style={{ fontSize: '1.4rem', fontFamily: 'var(--font-mono)', fontWeight: 700 }}
-                value={amountRupees}
-                onChange={e => setAmountRupees(e.target.value)}
-                placeholder="e.g. 2500"
-                required
-              />
-            </div>
+            {/* Amount (only for financial requests) */}
+            {isFinancialType && (
+              <div>
+                <label className="label" style={{ fontWeight: 600 }}>Amount (₹)</label>
+                <input
+                  type="number"
+                  step="any"
+                  className="input"
+                  placeholder="0.00"
+                  value={amountRupees}
+                  onChange={e => setAmountRupees(e.target.value)}
+                  style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}
+                  required
+                />
+              </div>
+            )}
 
-            <div>
-              <label className="label">Category</label>
-              <select
-                className="select"
-                value={categoryId}
-                onChange={e => setCategoryId(e.target.value)}
-              >
-                {categories.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {/* Category (for expense requests) */}
+            {requestType === 'expense_approval' && (
+              <div>
+                <label className="label" style={{ fontWeight: 600 }}>Category</label>
+                <select
+                  className="select"
+                  value={categoryId}
+                  onChange={e => setCategoryId(e.target.value)}
+                >
+                  {categories.filter(c => c.type === 'expense').map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
+            {/* Message / Details */}
             <div>
-              <label className="label">Reason / Justification for Purchase</label>
+              <label className="label" style={{ fontWeight: 600 }}>Message to Family Head</label>
               <textarea
-                className="textarea"
-                rows={3}
+                className="input"
+                style={{ minHeight: '85px', resize: 'vertical' }}
+                placeholder={
+                  requestType === 'permission_request'
+                    ? 'e.g. I need permission to view the family monthly summary to plan my education goals.'
+                    : 'Provide any context or reason for this request...'
+                }
                 value={description}
                 onChange={e => setDescription(e.target.value)}
-                placeholder="Why is this purchase needed? e.g. Current bag is damaged and the zipper is broken."
                 required
               />
+            </div>
+
+            <div
+              style={{
+                background: 'var(--bg-canvas, rgba(0,0,0,0.02))',
+                padding: '0.75rem',
+                borderRadius: '8px',
+                border: '1px solid var(--border-subtle, rgba(0,0,0,0.06))',
+                fontSize: '0.75rem',
+                color: 'var(--text-muted)',
+              }}
+            >
+              This request will be sent directly to the Family Head's notification center and request review queue.
             </div>
           </div>
 
@@ -162,8 +194,9 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
             <button type="button" className="btn btn-secondary" onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" className="btn btn-primary">
-              <Send size={15} /> Send to Family Queue
+            <button type="submit" className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 600 }}>
+              <Send size={15} />
+              <span>Send Request</span>
             </button>
           </div>
         </form>

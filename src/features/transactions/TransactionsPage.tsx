@@ -22,11 +22,11 @@ import {
 import { AccountTransferModal } from '../../components/modals/AccountTransferModal';
 
 interface TransactionsPageProps {
-  onOpenNewTx: () => void;
-  onOpenReceiptOcr: () => void;
+  onOpenNewTx: (initialType?: 'expense' | 'income') => void;
+  onOpenReceiptOcr?: () => void;
 }
 
-export const TransactionsPage: React.FC<TransactionsPageProps> = ({ onOpenNewTx, onOpenReceiptOcr }) => {
+export const TransactionsPage: React.FC<TransactionsPageProps> = ({ onOpenNewTx }) => {
   const {
     transactions,
     categories,
@@ -42,7 +42,8 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({ onOpenNewTx,
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterMember, setFilterMember] = useState<string>('all');
   const [filterAccount, setFilterAccount] = useState<string>('all');
-  const [dateRangePreset, setDateRangePreset] = useState<'all' | 'today' | 'week' | 'this_month' | 'last_month' | 'this_year'>('all');
+  const [dateRangePreset, setDateRangePreset] = useState<'all' | 'today' | 'week' | 'this_month' | 'last_month' | 'this_year' | 'custom'>('all');
+  const [customDate, setCustomDate] = useState<string>('');
   const [sortBy, setSortBy] = useState<'date_desc' | 'date_asc' | 'amount_desc' | 'amount_asc'>('date_desc');
 
   const [transferModalOpen, setTransferModalOpen] = useState(false);
@@ -68,6 +69,8 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({ onOpenNewTx,
       const txDate = new Date(tx.transaction_date);
       if (dateRangePreset === 'today') {
         if (tx.transaction_date.slice(0, 10) !== todayStr) return false;
+      } else if (dateRangePreset === 'custom' && customDate) {
+        if (tx.transaction_date.slice(0, 10) !== customDate) return false;
       } else if (dateRangePreset === 'this_month') {
         if (txDate.getMonth() !== now.getMonth() || txDate.getFullYear() !== now.getFullYear()) return false;
       } else if (dateRangePreset === 'last_month') {
@@ -143,13 +146,15 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({ onOpenNewTx,
           <button className="btn btn-secondary btn-sm" onClick={() => setTransferModalOpen(true)}>
             <ArrowRightLeft size={14} /> Transfer Funds
           </button>
-          <button className="btn btn-secondary btn-sm" onClick={onOpenReceiptOcr}>
-            <Sparkles size={14} color="var(--amber-accent)" /> Scan Receipt (OCR)
-          </button>
           {hasPermission('transactions.create') && (
-            <button className="btn btn-primary btn-sm" onClick={onOpenNewTx}>
-              <Plus size={15} /> Add Transaction
-            </button>
+            <>
+              <button className="btn btn-secondary btn-sm" onClick={() => onOpenNewTx('income')}>
+                <ArrowUpRight size={14} color="#059669" /> + Income
+              </button>
+              <button className="btn btn-primary btn-sm" onClick={() => onOpenNewTx('expense')}>
+                <ArrowDownLeft size={14} /> + Expense
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -201,7 +206,50 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({ onOpenNewTx,
             <option value="this_month">Date: This Month (Sep)</option>
             <option value="last_month">Date: Last Month (Aug)</option>
             <option value="this_year">Date: This Year (2026)</option>
+            <option value="custom">📅 Choose Calendar Date...</option>
           </select>
+
+          {/* Highlighted Calendar Date Selector */}
+          {dateRangePreset === 'custom' && (
+            <div
+              className="calendar-highlight-area"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                padding: '0.35rem 0.75rem',
+              }}
+            >
+              <Calendar size={15} color="#059669" />
+              <input
+                type="date"
+                value={customDate}
+                onChange={e => setCustomDate(e.target.value)}
+                style={{
+                  border: '1px solid #A7F3D0',
+                  padding: '0.35rem 0.65rem',
+                  fontSize: '0.82rem',
+                  width: 'auto',
+                }}
+              />
+              {customDate && (
+                <button
+                  type="button"
+                  onClick={() => setCustomDate('')}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#6B7280',
+                    cursor: 'pointer',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                  }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Type selector */}
           <select

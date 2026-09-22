@@ -1,0 +1,292 @@
+/* =========================================================
+   ROLE PERMISSION MATRIX & AUTHORIZATION ENGINE (Section 16 & 18)
+   Enforces 21 granular permissions across the 5 primary roles:
+   1. family_head (Family Head)
+   2. spouse (Spouse)
+   3. child (Daughter / Son)
+   4. grandparent (Grand Parents)
+   5. viewer (Viewer - view only)
+   ========================================================= */
+
+import { FamilyRole, RolePermissions, PermissionKey } from '../types';
+
+export const DEFAULT_ROLE_PERMISSIONS: Record<string, RolePermissions> = {
+  family_head: {
+    addExpense: true,
+    addIncome: true,
+    viewOwnTransactions: true,
+    editOwnTransaction: true,
+    editAnyTransaction: true,
+    deleteOwnTransaction: true,
+    deleteAnyTransaction: true,
+    viewDashboard: true,
+    viewFamilyIncome: true,
+    viewFamilyExpenses: true,
+    viewOtherMembers: true,
+    viewFamilySummary: true,
+    viewAccounts: true,
+    manageAccounts: true,
+    viewBudget: true,
+    manageBudget: true,
+    viewReports: true,
+    exportReports: true,
+    viewMembers: true,
+    inviteMembers: true,
+    removeMembers: true,
+    manageRoles: true,
+    managePermissions: true,
+    manageFamilySettings: true,
+    sendRequest: true,
+    receiveNotifications: true,
+  },
+  spouse: {
+    addExpense: true,
+    addIncome: true,
+    viewOwnTransactions: true,
+    editOwnTransaction: true,
+    editAnyTransaction: false,
+    deleteOwnTransaction: false,
+    deleteAnyTransaction: false,
+    viewDashboard: true,
+    viewFamilyIncome: true,
+    viewFamilyExpenses: true,
+    viewOtherMembers: true,
+    viewFamilySummary: true,
+    viewAccounts: true,
+    manageAccounts: false,
+    viewBudget: true,
+    manageBudget: false,
+    viewReports: true,
+    exportReports: false,
+    viewMembers: true,
+    inviteMembers: false,
+    removeMembers: false,
+    manageRoles: false,
+    managePermissions: false,
+    manageFamilySettings: false,
+    sendRequest: true,
+    receiveNotifications: true,
+  },
+  son: {
+    addExpense: true,
+    addIncome: true,
+    viewOwnTransactions: true,
+    editOwnTransaction: true,
+    editAnyTransaction: false,
+    deleteOwnTransaction: false,
+    deleteAnyTransaction: false,
+    viewDashboard: true,
+    viewFamilyIncome: false,
+    viewFamilyExpenses: false,
+    viewOtherMembers: false,
+    viewFamilySummary: false,
+    viewAccounts: false,
+    manageAccounts: false,
+    viewBudget: true,
+    manageBudget: false,
+    viewReports: false,
+    exportReports: false,
+    viewMembers: false,
+    inviteMembers: false,
+    removeMembers: false,
+    manageRoles: false,
+    managePermissions: false,
+    manageFamilySettings: false,
+    sendRequest: true,
+    receiveNotifications: true,
+  },
+  daughter: {
+    addExpense: true,
+    addIncome: true,
+    viewOwnTransactions: true,
+    editOwnTransaction: true,
+    editAnyTransaction: false,
+    deleteOwnTransaction: false,
+    deleteAnyTransaction: false,
+    viewDashboard: true,
+    viewFamilyIncome: false,
+    viewFamilyExpenses: false,
+    viewOtherMembers: false,
+    viewFamilySummary: false,
+    viewAccounts: false,
+    manageAccounts: false,
+    viewBudget: true,
+    manageBudget: false,
+    viewReports: false,
+    exportReports: false,
+    viewMembers: false,
+    inviteMembers: false,
+    removeMembers: false,
+    manageRoles: false,
+    managePermissions: false,
+    manageFamilySettings: false,
+    sendRequest: true,
+    receiveNotifications: true,
+  },
+  child: {
+    addExpense: true,
+    addIncome: true,
+    viewOwnTransactions: true,
+    editOwnTransaction: true,
+    editAnyTransaction: false,
+    deleteOwnTransaction: false,
+    deleteAnyTransaction: false,
+    viewDashboard: true,
+    viewFamilyIncome: false,
+    viewFamilyExpenses: false,
+    viewOtherMembers: false,
+    viewFamilySummary: false,
+    viewAccounts: false,
+    manageAccounts: false,
+    viewBudget: true,
+    manageBudget: false,
+    viewReports: false,
+    exportReports: false,
+    viewMembers: false,
+    inviteMembers: false,
+    removeMembers: false,
+    manageRoles: false,
+    managePermissions: false,
+    manageFamilySettings: false,
+    sendRequest: true,
+    receiveNotifications: true,
+  },
+  grandparent: {
+    addExpense: true,
+    addIncome: true,
+    viewOwnTransactions: true,
+    editOwnTransaction: true,
+    editAnyTransaction: false,
+    deleteOwnTransaction: false,
+    deleteAnyTransaction: false,
+    viewDashboard: true,
+    viewFamilyIncome: true,
+    viewFamilyExpenses: true,
+    viewOtherMembers: true,
+    viewFamilySummary: false,
+    viewAccounts: true,
+    manageAccounts: false,
+    viewBudget: true,
+    manageBudget: false,
+    viewReports: true,
+    exportReports: false,
+    viewMembers: true,
+    inviteMembers: false,
+    removeMembers: false,
+    manageRoles: false,
+    managePermissions: false,
+    manageFamilySettings: false,
+    sendRequest: true,
+    receiveNotifications: true,
+  },
+  viewer: {
+    addExpense: false,
+    addIncome: false,
+    viewOwnTransactions: true,
+    editOwnTransaction: false,
+    editAnyTransaction: false,
+    deleteOwnTransaction: false,
+    deleteAnyTransaction: false,
+    viewDashboard: true,
+    viewFamilyIncome: true,
+    viewFamilyExpenses: true,
+    viewOtherMembers: true,
+    viewFamilySummary: true,
+    viewAccounts: true,
+    manageAccounts: false,
+    viewBudget: true,
+    manageBudget: false,
+    viewReports: true,
+    exportReports: false,
+    viewMembers: true,
+    inviteMembers: false,
+    removeMembers: false,
+    manageRoles: false,
+    managePermissions: false,
+    manageFamilySettings: false,
+    sendRequest: false,
+    receiveNotifications: true,
+  },
+};
+
+export const ROLE_DISPLAY_NAMES: Record<string, string> = {
+  family_head: 'Family Head',
+  spouse: 'Spouse',
+  son: 'Son',
+  daughter: 'Daughter',
+  child: 'Child',
+  grandparent: 'Grand Parent',
+  viewer: 'Viewer',
+};
+
+export const ROLE_DESCRIPTIONS: Record<string, string> = {
+  family_head: 'Complete governance over workspace, budgets, members, roles, and settings.',
+  spouse: 'Co-manages family finances, records shared income/expenses, views reports.',
+  son: 'Personal allowance management, personal spending & income records, and requests to Family Head.',
+  daughter: 'Personal allowance management, personal spending & income records, and requests to Family Head.',
+  child: 'Personal allowance management, personal spending records, and requests to Family Head.',
+  grandparent: 'Permitted family financial overview and personal transaction records.',
+  viewer: 'Strictly view-only access across permitted family records. All mutations disabled.',
+};
+
+export function normalizeRole(role: string): string {
+  const r = (role || '').toLowerCase();
+  if (r.includes('head')) return 'family_head';
+  if (r.includes('spouse') || r.includes('co_manager') || r.includes('comanager')) return 'spouse';
+  if (r.includes('son')) return 'son';
+  if (r.includes('daughter')) return 'daughter';
+  if (r.includes('child')) return 'child';
+  if (r.includes('grand')) return 'grandparent';
+  if (r.includes('viewer')) return 'viewer';
+  if (r.includes('adult')) return 'spouse';
+  return r || 'viewer';
+}
+
+export const CAMEL_TO_DOT_MAP: Record<keyof RolePermissions, PermissionKey[]> = {
+  viewDashboard: ['family.view'],
+  viewFamilyIncome: ['transactions.view'],
+  viewFamilyExpenses: ['transactions.view'],
+  viewOwnTransactions: ['transactions.view'],
+  addIncome: ['transactions.create'],
+  addExpense: ['transactions.create'],
+  editOwnTransaction: ['transactions.update'],
+  editAnyTransaction: ['transactions.update'],
+  deleteOwnTransaction: ['transactions.delete'],
+  deleteAnyTransaction: ['transactions.delete'],
+  viewAccounts: ['accounts.view'],
+  manageAccounts: ['accounts.create', 'accounts.update', 'accounts.delete'],
+  viewBudget: ['budgets.view'],
+  manageBudget: ['budgets.create', 'budgets.update', 'budgets.delete'],
+  viewReports: ['reports.view'],
+  exportReports: ['reports.export'],
+  viewMembers: ['members.view'],
+  viewOtherMembers: ['members.view'],
+  viewFamilySummary: ['family.view'],
+  inviteMembers: ['members.invite'],
+  removeMembers: ['members.remove'],
+  manageRoles: ['members.update_role'],
+  managePermissions: ['members.update_permissions'],
+  manageFamilySettings: ['family.update'],
+  sendRequest: ['requests.create'],
+  receiveNotifications: ['notifications.receive'],
+};
+
+export function checkPermission(
+  role: string,
+  permission: keyof RolePermissions,
+  customOverrides?: Record<string, boolean>
+): boolean {
+  if (customOverrides) {
+    if (customOverrides[permission] !== undefined) {
+      return Boolean(customOverrides[permission]);
+    }
+    const dotKeys = CAMEL_TO_DOT_MAP[permission] || [];
+    for (const dotKey of dotKeys) {
+      if (customOverrides[dotKey] !== undefined) {
+        return Boolean(customOverrides[dotKey]);
+      }
+    }
+  }
+  const normalized = normalizeRole(role);
+  return Boolean(DEFAULT_ROLE_PERMISSIONS[normalized]?.[permission]);
+}

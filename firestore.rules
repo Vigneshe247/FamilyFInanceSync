@@ -1,0 +1,174 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ================= HELPER FUNCTIONS =================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isUser(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    // Never allow writing to the Demo Family workspace (strictly read-only)
+    function isDemoWorkspace(familyId) {
+      return familyId == 'demo_family' || familyId == 'family_demo';
+    }
+
+    // Check if the authenticated user is an enrolled member of the family
+    function isFamilyMember(familyId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/families/$(familyId)/members/$(request.auth.uid));
+    }
+
+    // Fetch the member document of the current user
+    function getMemberDoc(familyId) {
+      return get(/databases/$(database)/documents/families/$(familyId)/members/$(request.auth.uid)).data;
+    }
+
+    function getMemberRole(familyId) {
+      return getMemberDoc(familyId).role;
+    }
+
+    function isFamilyHead(familyId) {
+      return isFamilyMember(familyId) && getMemberRole(familyId) == 'family_head';
+    }
+
+    function isViewer(familyId) {
+      return isFamilyMember(familyId) && getMemberRole(familyId) == 'viewer';
+    }
+
+    // Permission check helper
+    function hasPermission(familyId, perm) {
+      return isFamilyHead(familyId) || (
+        isFamilyMember(familyId) &&
+        getMemberDoc(familyId).permissions[perm] == true
+      );
+    }
+
+    // ================= 1. USERS COLLECTION =================
+    // users/{uid} — each user owns their profile document
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isUser(userId);
+      allow update: if isUser(userId);
+      allow delete: if isUser(userId);
+    }
+
+    // ================= 2. FAMILIES WORKSPACE =================
+    // Strict multi-tenant boundaries:
+    // Family A can NEVER read or write Family B documents.
+    match /families/{familyId} {
+      allow read: if isFamilyMember(familyId) || isDemoWorkspace(familyId);
+      allow create: if isAuthenticated();
+      allow update, delete: if !isDemoWorkspace(familyId) && isFamilyHead(familyId);
+
+      // Members Subcollection (/families/{familyId}/members/{memberUid})
+      match /members/{memberUid} {
+        allow read: if isFamilyMember(familyId) || isDemoWorkspace(familyId);
+        
+        // Initial self-join or invitation acceptance
+        allow create: if !isDemoWorkspace(familyId) && (
+          isFamilyHead(familyId) || (isAuthenticated() && request.auth.uid == memberUid)
+        );
+        
+        // Only Family Head can change roles, permissions, or suspend members
+        allow update: if !isDemoWorkspace(familyId) && isFamilyHead(familyId);
+        
+        // Only Family Head can remove members (cannot remove self if only head)
+        allow delete: if !isDemoWorkspace(familyId) && isFamilyHead(familyId) && request.auth.uid != memberUid;
+      }
+
+      // Transactions Subcollection (/families/{familyId}/transactions/{txId})
+      match /transactions/{txId} {
+        allow read: if isFamilyMember(familyId) || isDemoWorkspace(familyId);
+        
+        // Creating transactions requires addIncome or addExpense permissions. Viewers cannot write.
+        allow create: if !isDemoWorkspace(familyId) && !isViewer(familyId) && (
+          hasPermission(familyId, 'addExpense') || hasPermission(familyId, 'addIncome')
+        );
+        
+        // Editing transactions: Family Head or owner with editOwnTransaction
+        allow update: if !isDemoWorkspace(familyId) && !isViewer(familyId) && (
+          isFamilyHead(familyId) ||
+          hasPermission(familyId, 'editAnyTransaction') ||
+          (resource.data.userId == request.auth.uid && hasPermission(familyId, 'editOwnTransaction'))
+        );
+        
+        // Deleting transactions: Family Head or deleteAnyTransaction / deleteOwnTransaction
+        allow delete: if !isDemoWorkspace(familyId) && !isViewer(familyId) && (
+          isFamilyHead(familyId) ||
+          hasPermission(familyId, 'deleteAnyTransaction') ||
+          (resource.data.userId == request.auth.uid && hasPermission(familyId, 'deleteOwnTransaction'))
+        );
+      }
+
+      // Accounts Subcollection (/families/{familyId}/accounts/{accId})
+      match /accounts/{accId} {
+        allow read: if (isFamilyMember(familyId) && hasPermission(familyId, 'viewAccounts')) || isDemoWorkspace(familyId);
+        allow create, update, delete: if !isDemoWorkspace(familyId) && hasPermission(familyId, 'manageAccounts');
+      }
+
+      // Budgets Subcollection (/families/{familyId}/budgets/{budgetId})
+      match /budgets/{budgetId} {
+        allow read: if (isFamilyMember(familyId) && hasPermission(familyId, 'viewBudget')) || isDemoWorkspace(familyId);
+        allow create, update, delete: if !isDemoWorkspace(familyId) && hasPermission(familyId, 'manageBudget');
+      }
+
+      // Debts Subcollection (/families/{familyId}/debts/{debtId})
+      match /debts/{debtId} {
+        allow read: if isFamilyMember(familyId) || isDemoWorkspace(familyId);
+        allow create, update, delete: if !isDemoWorkspace(familyId) && hasPermission(familyId, 'manageAccounts');
+      }
+
+      // Allowances Subcollection (/families/{familyId}/allowances/{allowanceId})
+      match /allowances/{allowanceId} {
+        allow read: if isFamilyMember(familyId) || isDemoWorkspace(familyId);
+        allow create, update, delete: if !isDemoWorkspace(familyId) && isFamilyHead(familyId);
+      }
+
+      // Savings Goals Subcollection (/families/{familyId}/goals/{goalId})
+      match /goals/{goalId} {
+        allow read: if isFamilyMember(familyId) || isDemoWorkspace(familyId);
+        allow create, update: if !isDemoWorkspace(familyId) && !isViewer(familyId);
+        allow delete: if !isDemoWorkspace(familyId) && isFamilyHead(familyId);
+      }
+
+      // Invitations Subcollection (/families/{familyId}/invitations/{invitationId})
+      match /invitations/{invitationId} {
+        allow read: if isAuthenticated();
+        // Only Family Head can generate invitations
+        allow create: if !isDemoWorkspace(familyId) && isFamilyHead(familyId);
+        // Accepting invitation updates status
+        allow update: if isAuthenticated();
+        allow delete: if !isDemoWorkspace(familyId) && isFamilyHead(familyId);
+      }
+
+      // Notifications Subcollection (/families/{familyId}/notifications/{notifId})
+      match /notifications/{notifId} {
+        allow read: if isFamilyMember(familyId);
+        allow create: if isFamilyMember(familyId);
+        allow update: if isFamilyMember(familyId) && (resource.data.recipientUid == request.auth.uid || isFamilyHead(familyId));
+        allow delete: if isFamilyHead(familyId);
+      }
+
+      // Immutable Audit Logs Subcollection (/families/{familyId}/auditLogs/{logId})
+      match /auditLogs/{logId} {
+        allow read: if isFamilyMember(familyId);
+        allow create: if isFamilyMember(familyId);
+        // Audit logs are cryptographically immutable: NEVER permit update or delete!
+        allow update, delete: if false;
+      }
+    }
+
+    // ================= 3. GLOBAL INVITATIONS LOOKUP =================
+    match /invites/{inviteId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAuthenticated();
+    }
+  }
+}

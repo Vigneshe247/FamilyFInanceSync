@@ -1,12 +1,19 @@
-/* =========================================================
-   FAMILY FINANCE SYNC — NEO-MINT CHASSIS & ROUTING
-   ========================================================= */
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { RouterProvider, useRouter } from './router/Router';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { useFamilyFinance, FamilyFinanceProvider } from './context/FamilyFinanceContext';
+import { usePermissions } from './context/FamilyContext';
+import { ProtectedRoute } from './components/auth/ProtectedRoute';
+import { AccessRestricted } from './components/auth/AccessRestricted';
 import { TopMenubar } from './components/layout/TopMenubar';
 
-// Feature Views
+// Auth Pages
+import { LoginPage } from './components/auth/LoginPage';
+import { RegisterPage } from './components/auth/RegisterPage';
+import { VerifyEmailPage } from './components/auth/VerifyEmailPage';
+import { ForgotPasswordPage } from './components/auth/ForgotPasswordPage';
+
+// Feature Views (Section 37: Obsolete features cleanly removed)
 import { DashboardPage } from './features/dashboard/DashboardPage';
 import { TransactionsPage } from './features/transactions/TransactionsPage';
 import { BudgetsPage } from './features/budgets/BudgetsPage';
@@ -16,16 +23,10 @@ import { AffordabilityPage } from './features/affordability/AffordabilityPage';
 import { ReportsPage } from './features/reports/ReportsPage';
 import { RecurringPage } from './features/recurring/RecurringPage';
 import { ControlCenterPage } from './features/family/ControlCenterPage';
-import { ApprovalCenterPage } from './features/family/ApprovalCenterPage';
 import { MembersPage } from './features/family/MembersPage';
 import { PermissionsMatrixPage } from './features/family/PermissionsMatrixPage';
 import { SpendingLimitsPage } from './features/family/SpendingLimitsPage';
 import { AccountsVaultPage } from './features/family/AccountsVaultPage';
-import { AuditLogsPage } from './features/audit/AuditLogsPage';
-import { SecurityPage } from './features/security/SecurityPage';
-import { ReceiptOcrPage } from './features/futures/ReceiptOcrPage';
-import { BankSyncPage } from './features/futures/BankSyncPage';
-import { AiAdvisorPage } from './features/futures/AiAdvisorPage';
 
 import { LoansPage } from './features/loans/LoansPage';
 import { InvestmentsPage } from './features/investments/InvestmentsPage';
@@ -34,7 +35,7 @@ import { SharedExpensesPage } from './features/split/SharedExpensesPage';
 // Modals
 import { NewTransactionModal } from './components/modals/NewTransactionModal';
 import { NewRequestModal } from './components/modals/NewRequestModal';
-import { AuthUserModal } from './components/modals/AuthUserModal';
+import { ProfileModal } from './components/profile/ProfileModal';
 import { DataImportModal } from './components/modals/DataImportModal';
 
 import {
@@ -42,15 +43,65 @@ import {
   Receipt,
   PiggyBank,
   GitPullRequest,
-  MoreHorizontal,
+  Users,
   Wallet,
 } from 'lucide-react';
 
+const pathToTabMap: Record<string, string> = {
+  '/dashboard': 'dashboard',
+  '/transactions': 'transactions',
+  '/income': 'transactions',
+  '/expenses': 'transactions',
+  '/accounts': 'accounts',
+  '/budget': 'budgets',
+  '/budgets': 'budgets',
+  '/requests': 'requests',
+  '/goals': 'goals',
+  '/affordability': 'affordability',
+  '/reports': 'reports',
+  '/recurring': 'recurring',
+  '/family': 'control_center',
+  '/settings': 'control_center',
+  '/family/settings': 'control_center',
+  '/family/members': 'members',
+  '/family/permissions': 'permissions',
+  '/spending_limits': 'spending_limits',
+  '/loans': 'loans',
+  '/investments': 'investments',
+  '/split_expenses': 'split_expenses',
+};
+
+const tabToPathMap: Record<string, string> = {
+  dashboard: '/dashboard',
+  transactions: '/transactions',
+  accounts: '/accounts',
+  budgets: '/budget',
+  requests: '/requests',
+  goals: '/goals',
+  affordability: '/affordability',
+  reports: '/reports',
+  recurring: '/recurring',
+  control_center: '/family',
+  members: '/family/members',
+  permissions: '/family/permissions',
+  spending_limits: '/spending_limits',
+  loans: '/loans',
+  investments: '/investments',
+  split_expenses: '/split_expenses',
+};
+
 const AppInner: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<string>('dashboard');
+  const { currentPath, navigate } = useRouter();
+  const { isAuthenticated, isEmailVerified } = useAuth();
+
+  const [activeTab, setActiveTabState] = useState<string>(() => {
+    return pathToTabMap[currentPath] || 'dashboard';
+  });
+
   const [newTxModalOpen, setNewTxModalOpen] = useState(false);
+  const [newTxInitialType, setNewTxInitialType] = useState<'expense' | 'income'>('expense');
   const [newRequestModalOpen, setNewRequestModalOpen] = useState(false);
-  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [requestInitialData, setRequestInitialData] = useState<{
     title: string;
@@ -59,45 +110,80 @@ const AppInner: React.FC = () => {
     description: string;
   } | null>(null);
 
-  const { requests, currentMember } = useFamilyFinance();
-  const pendingCount = requests.filter(r => r.status === 'pending').length;
-  const isChild = currentMember.role === 'CHILD';
+  const { requests } = useFamilyFinance();
+  const { can, isFamilyHead, isChild: isPermChild } = usePermissions();
+  const isChild = isPermChild;
 
-  const handleOpenAffordabilityWithData = (data: {
-    title: string;
-    amountRupees: string;
-    categoryId: string;
-    description: string;
-  }) => {
-    setRequestInitialData(data);
-    setNewRequestModalOpen(true);
+  // Sync tab with currentPath
+  useEffect(() => {
+    if (pathToTabMap[currentPath]) {
+      setActiveTabState(pathToTabMap[currentPath]);
+    }
+  }, [currentPath]);
+
+  // Navigate both activeTab and URL route
+  const setActiveTab = (tab: string) => {
+    setActiveTabState(tab);
+    const targetPath = tabToPathMap[tab] || '/dashboard';
+    navigate(targetPath);
   };
 
+  const handleOpenNewTx = (initialType?: 'expense' | 'income') => {
+    setNewTxInitialType(initialType || 'expense');
+    setNewTxModalOpen(true);
+  };
+
+  // ================= 1. PUBLIC ROUTES =================
+  if (currentPath === '/login') {
+    if (isAuthenticated && isEmailVerified) {
+      navigate('/dashboard');
+      return null;
+    }
+    return <LoginPage />;
+  }
+
+  if (currentPath === '/register') {
+    if (isAuthenticated && isEmailVerified) {
+      navigate('/dashboard');
+      return null;
+    }
+    return <RegisterPage />;
+  }
+
+  if (currentPath === '/verify-email') {
+    return <VerifyEmailPage />;
+  }
+
+  if (currentPath === '/forgot-password') {
+    return <ForgotPasswordPage />;
+  }
+
+  // ================= 2. AUTHENTICATED APP VIEWS =================
   const renderActiveView = () => {
     switch (activeTab) {
       case 'dashboard':
         return (
           <DashboardPage
-            onOpenNewTx={() => setNewTxModalOpen(true)}
+            onOpenNewTx={handleOpenNewTx}
             onOpenNewRequest={() => {
               setRequestInitialData(null);
               setNewRequestModalOpen(true);
             }}
-            onOpenAffordability={() => setActiveTab('affordability')}
             setActiveTab={setActiveTab}
             onOpenImportModal={() => setImportModalOpen(true)}
           />
         );
-      case 'accounts':
-        return <AccountsVaultPage />;
       case 'transactions':
-        return (
-          <TransactionsPage
-            onOpenNewTx={() => setNewTxModalOpen(true)}
-            onOpenReceiptOcr={() => setActiveTab('receipt_ocr')}
-          />
-        );
+        return <TransactionsPage onOpenNewTx={handleOpenNewTx} />;
+      case 'accounts':
+        if (!can('viewAccounts')) {
+          return <AccessRestricted onBackToDashboard={() => setActiveTab('dashboard')} message="You don't have permission to access family accounts." />;
+        }
+        return <AccountsVaultPage />;
       case 'budgets':
+        if (!can('viewBudget')) {
+          return <AccessRestricted onBackToDashboard={() => setActiveTab('dashboard')} message="You don't have permission to access family budgets." />;
+        }
         return <BudgetsPage />;
       case 'requests':
         return (
@@ -113,42 +199,39 @@ const AppInner: React.FC = () => {
       case 'affordability':
         return (
           <AffordabilityPage
-            onOpenNewRequestWithData={handleOpenAffordabilityWithData}
+            onOpenNewRequestWithData={data => {
+              setRequestInitialData(data);
+              setNewRequestModalOpen(true);
+            }}
           />
         );
       case 'reports':
+        if (!can('viewReports')) {
+          return <AccessRestricted onBackToDashboard={() => setActiveTab('dashboard')} message="You don't have permission to view analytics reports." />;
+        }
         return <ReportsPage />;
       case 'recurring':
         return <RecurringPage />;
       case 'control_center':
-        return (
-          <ControlCenterPage
-            setActiveTab={setActiveTab}
-            onOpenImportModal={() => setImportModalOpen(true)}
-          />
-        );
-      case 'approval_center':
-        return <ApprovalCenterPage />;
+        if (!can('manageFamilySettings')) {
+          return <AccessRestricted onBackToDashboard={() => setActiveTab('dashboard')} message="Only Family Managers can access family settings." />;
+        }
+        return <ControlCenterPage setActiveTab={setActiveTab} onOpenImportModal={() => setImportModalOpen(true)} />;
       case 'members':
-        return <MembersPage />;
+        if (!can('viewMembers')) {
+          return <AccessRestricted onBackToDashboard={() => setActiveTab('dashboard')} message="You don't have permission to view family members." />;
+        }
+        return <MembersPage onNavigatePermissions={() => setActiveTab('permissions')} />;
       case 'permissions':
+        if (!isFamilyHead && !can('managePermissions')) {
+          return <AccessRestricted onBackToDashboard={() => setActiveTab('dashboard')} message="Only the Family Head can configure permissions and overrides." />;
+        }
         return <PermissionsMatrixPage />;
       case 'spending_limits':
+        if (!isFamilyHead && !can('manageBudget')) {
+          return <AccessRestricted onBackToDashboard={() => setActiveTab('dashboard')} message="Only the Family Head can configure member spending limits." />;
+        }
         return <SpendingLimitsPage />;
-      case 'audit':
-        return <AuditLogsPage />;
-      case 'security':
-        return <SecurityPage />;
-      case 'receipt_ocr':
-        return (
-          <ReceiptOcrPage
-            onTransactionCreated={() => setActiveTab('transactions')}
-          />
-        );
-      case 'bank_sync':
-        return <BankSyncPage />;
-      case 'ai_insights':
-        return <AiAdvisorPage />;
       case 'loans':
         return <LoansPage />;
       case 'investments':
@@ -158,12 +241,11 @@ const AppInner: React.FC = () => {
       default:
         return (
           <DashboardPage
-            onOpenNewTx={() => setNewTxModalOpen(true)}
+            onOpenNewTx={handleOpenNewTx}
             onOpenNewRequest={() => {
               setRequestInitialData(null);
               setNewRequestModalOpen(true);
             }}
-            onOpenAffordability={() => setActiveTab('affordability')}
             setActiveTab={setActiveTab}
             onOpenImportModal={() => setImportModalOpen(true)}
           />
@@ -172,130 +254,114 @@ const AppInner: React.FC = () => {
   };
 
   return (
-    <div className="app-viewport-shell">
-      {/* Outer Curved Neo-Mint Chassis Envelope (Finova & Crextio style) */}
-      <div className="neo-chassis-container">
-        {/* Floating Capsule Navbar */}
-        <TopMenubar
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-          onOpenNewTx={() => setNewTxModalOpen(true)}
-          onOpenNewRequest={() => {
-            setRequestInitialData(null);
-            setNewRequestModalOpen(true);
-          }}
-          onOpenAffordability={() => setActiveTab('affordability')}
-          onOpenReceiptOcr={() => setActiveTab('receipt_ocr')}
-          onOpenAuthModal={() => setAuthModalOpen(true)}
-          onOpenImportModal={() => setImportModalOpen(true)}
+    <ProtectedRoute requireVerification={true}>
+      <div className="app-viewport-shell">
+        {/* Outer Curved Chassis Envelope */}
+        <div className="neo-chassis-container">
+          {/* Floating Capsule Navbar */}
+          <TopMenubar
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            onOpenNewTx={handleOpenNewTx}
+            onOpenNewRequest={() => {
+              setRequestInitialData(null);
+              setNewRequestModalOpen(true);
+            }}
+            onOpenProfileModal={() => setProfileModalOpen(true)}
+            onOpenImportModal={() => setImportModalOpen(true)}
+          />
+
+          {/* Dynamic Page Body */}
+          <main style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+            {renderActiveView()}
+          </main>
+
+          {/* Mobile Floating Capsule Navigation Bar (When screen < 900px) */}
+          <nav className="mobile-bottom-capsule-nav">
+            <button
+              className={`mobile-capsule-item ${activeTab === 'dashboard' ? 'active' : ''}`}
+              onClick={() => setActiveTab('dashboard')}
+            >
+              <LayoutDashboard size={18} />
+              <span>Home</span>
+            </button>
+
+            <button
+              className={`mobile-capsule-item ${activeTab === 'transactions' ? 'active' : ''}`}
+              onClick={() => setActiveTab('transactions')}
+            >
+              <Receipt size={18} />
+              <span>Finances</span>
+            </button>
+
+            <button
+              className={`mobile-capsule-item ${activeTab === 'members' ? 'active' : ''}`}
+              onClick={() => setActiveTab('members')}
+            >
+              <Users size={18} />
+              <span>Members</span>
+            </button>
+
+            {!isChild && (
+              <button
+                className={`mobile-capsule-item ${activeTab === 'budgets' ? 'active' : ''}`}
+                onClick={() => setActiveTab('budgets')}
+              >
+                <PiggyBank size={18} />
+                <span>Budgets</span>
+              </button>
+            )}
+
+            <button
+              className={`mobile-capsule-item ${activeTab === 'requests' ? 'active' : ''}`}
+              onClick={() => setActiveTab('requests')}
+            >
+              <GitPullRequest size={18} />
+              <span>Requests</span>
+            </button>
+          </nav>
+        </div>
+
+        {/* Modals */}
+        <NewTransactionModal
+          isOpen={newTxModalOpen}
+          initialType={newTxInitialType}
+          onClose={() => setNewTxModalOpen(false)}
         />
 
-        {/* Dynamic Page Body */}
-        <main style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          {renderActiveView()}
-        </main>
+        <NewRequestModal
+          isOpen={newRequestModalOpen}
+          onClose={() => {
+            setNewRequestModalOpen(false);
+            setRequestInitialData(null);
+          }}
+          initialData={requestInitialData}
+        />
 
-        {/* Mobile Floating Capsule Navigation Bar (When screen < 900px) */}
-        <nav className="mobile-bottom-capsule-nav">
-          <button
-            className={`mobile-capsule-item ${activeTab === 'dashboard' ? 'active' : ''}`}
-            onClick={() => setActiveTab('dashboard')}
-          >
-            <LayoutDashboard size={18} />
-            <span>Home</span>
-          </button>
+        {/* Section 3 & 4: Pure Personal Profile Modal */}
+        <ProfileModal
+          isOpen={profileModalOpen}
+          onClose={() => setProfileModalOpen(false)}
+        />
 
-          <button
-            className={`mobile-capsule-item ${activeTab === 'accounts' ? 'active' : ''}`}
-            onClick={() => setActiveTab('accounts')}
-          >
-            <Wallet size={18} />
-            <span>Accounts</span>
-          </button>
-
-          <button
-            className={`mobile-capsule-item ${activeTab === 'transactions' ? 'active' : ''}`}
-            onClick={() => setActiveTab('transactions')}
-          >
-            <Receipt size={18} />
-            <span>Ledger</span>
-          </button>
-
-          {!isChild && (
-            <button
-              className={`mobile-capsule-item ${activeTab === 'budgets' ? 'active' : ''}`}
-              onClick={() => setActiveTab('budgets')}
-            >
-              <PiggyBank size={18} />
-              <span>Budget</span>
-            </button>
-          )}
-
-          <button
-            className={`mobile-capsule-item ${activeTab === 'requests' ? 'active' : ''}`}
-            onClick={() => setActiveTab('requests')}
-            style={{ position: 'relative' }}
-          >
-            <GitPullRequest size={18} />
-            <span>Requests</span>
-            {pendingCount > 0 && (
-              <span
-                style={{
-                  position: 'absolute',
-                  top: '2px',
-                  right: '12px',
-                  width: '6px',
-                  height: '6px',
-                  borderRadius: '50%',
-                  backgroundColor: '#EB5757',
-                }}
-              ></span>
-            )}
-          </button>
-
-          <button
-            className={`mobile-capsule-item ${activeTab === 'control_center' ? 'active' : ''}`}
-            onClick={() => setActiveTab(isChild ? 'affordability' : 'control_center')}
-          >
-            <MoreHorizontal size={18} />
-            <span>{isChild ? 'Afford' : 'More'}</span>
-          </button>
-        </nav>
+        <DataImportModal
+          isOpen={importModalOpen}
+          onClose={() => setImportModalOpen(false)}
+        />
       </div>
-
-      {/* Modals */}
-      <NewTransactionModal
-        isOpen={newTxModalOpen}
-        onClose={() => setNewTxModalOpen(false)}
-      />
-
-      <NewRequestModal
-        isOpen={newRequestModalOpen}
-        onClose={() => {
-          setNewRequestModalOpen(false);
-          setRequestInitialData(null);
-        }}
-        initialData={requestInitialData}
-      />
-
-      <AuthUserModal
-        isOpen={authModalOpen}
-        onClose={() => setAuthModalOpen(false)}
-      />
-
-      <DataImportModal
-        isOpen={importModalOpen}
-        onClose={() => setImportModalOpen(false)}
-      />
-    </div>
+    </ProtectedRoute>
   );
 };
 
 export const App: React.FC = () => {
   return (
-    <FamilyFinanceProvider>
-      <AppInner />
-    </FamilyFinanceProvider>
+    <RouterProvider>
+      <AuthProvider>
+        <FamilyFinanceProvider>
+          <AppInner />
+        </FamilyFinanceProvider>
+      </AuthProvider>
+    </RouterProvider>
   );
 };
 

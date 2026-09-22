@@ -186,7 +186,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ onOpenNewRequest }) 
                         {formatDate(req.created_at)}
                       </span>
                       <span className="badge badge-sky" style={{ fontSize: '0.72rem' }}>
-                        {cat?.name || 'Education'}
+                        {req.request_type ? req.request_type.replace(/_/g, ' ').toUpperCase() : (cat?.name || 'Request')}
                       </span>
                     </div>
 
@@ -214,8 +214,8 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ onOpenNewRequest }) 
 
                   {/* Right side: Amount and Decision Actions */}
                   <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.75rem' }}>
-                    <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '1.65rem', color: 'var(--ink)' }}>
-                      {formatPaise(req.amount)}
+                    <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: req.amount > 0 ? '1.65rem' : '1.1rem', color: req.amount > 0 ? 'var(--ink)' : 'var(--ink-muted)' }}>
+                      {req.amount > 0 ? formatPaise(req.amount) : 'Action Request'}
                     </div>
 
                     {isPending && (

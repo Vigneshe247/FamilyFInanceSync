@@ -27,7 +27,7 @@ interface InvitationModalProps {
 export const InvitationModal: React.FC<InvitationModalProps> = ({ isOpen, onClose }) => {
   const { family, createInvitation, currentMember } = useFamilyFinance();
 
-  const [role, setRole] = useState<SystemRoleType>('ADULT_MEMBER');
+  const [role, setRole] = useState<SystemRoleType>('spouse');
   const [email, setEmail] = useState('');
   const [allowanceInput, setAllowanceInput] = useState('2000');
   const [generatedInvite, setGeneratedInvite] = useState<{
@@ -106,10 +106,10 @@ export const InvitationModal: React.FC<InvitationModalProps> = ({ isOpen, onClos
                   onChange={e => setRole(e.target.value as SystemRoleType)}
                   style={{ cursor: 'pointer' }}
                 >
-                  <option value="ADULT_MEMBER">Adult Member (Shared bills, goals, personal finance)</option>
-                  <option value="CHILD">Child Member (Allowance tracker, money requests & goals)</option>
-                  <option value="CO_MANAGER">Co-Manager (Budgets, limits & family vault management)</option>
-                  <option value="VIEWER">Viewer (Read-only financial overview)</option>
+                  <option value="spouse">Spouse (Co-manages family finances, records transactions)</option>
+                  <option value="child">Daughter / Son (Allowance tracker, personal spending & requests)</option>
+                  <option value="grandparent">Grand Parents (Permitted family overview & personal records)</option>
+                  <option value="viewer">Viewer (Strictly read-only financial overview)</option>
                 </select>
               </div>
 

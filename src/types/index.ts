@@ -2,22 +2,78 @@
    FAMILY FINANCE SYNC — DOMAIN DATA CONTRACTS & TYPE SCHEMAS
    ========================================================= */
 
+export type FamilyRole =
+  | 'family_head'
+  | 'spouse'
+  | 'son'
+  | 'daughter'
+  | 'child'
+  | 'grandparent'
+  | 'viewer'
+  | string;
+
 export type SystemRoleType = 
   | 'FAMILY_HEAD' 
   | 'CO_MANAGER' 
   | 'ADULT_MEMBER' 
   | 'CHILD' 
-  | 'VIEWER';
+  | 'VIEWER'
+  | 'SON'
+  | 'DAUGHTER'
+  | 'GRANDPARENT'
+  | FamilyRole;
+
+// The Standard Permissions organized into 5 clean groups (Section 18)
+export interface RolePermissions {
+  // Financial
+  addExpense: boolean;
+  addIncome: boolean;
+  viewOwnTransactions: boolean;
+  editOwnTransaction: boolean;
+  editAnyTransaction?: boolean;
+  deleteOwnTransaction?: boolean;
+  deleteAnyTransaction?: boolean;
+
+  // Family
+  viewDashboard: boolean;
+  viewFamilyIncome: boolean;
+  viewFamilyExpenses: boolean;
+  viewOtherMembers?: boolean;
+  viewFamilySummary?: boolean;
+
+  // Management
+  viewAccounts: boolean;
+  manageAccounts: boolean;
+  viewBudget: boolean;
+  manageBudget: boolean;
+  viewReports: boolean;
+  exportReports: boolean;
+  viewMembers: boolean;
+  inviteMembers: boolean;
+  removeMembers: boolean;
+  manageRoles: boolean;
+  managePermissions: boolean;
+  manageFamilySettings: boolean;
+
+  // Requests
+  sendRequest?: boolean;
+
+  // Notifications
+  receiveNotifications?: boolean;
+}
 
 export type PermissionKey =
   | 'family.view'
   | 'family.update'
+  | 'family.summary'
   | 'members.view'
   | 'members.invite'
   | 'members.remove'
   | 'members.update_role'
   | 'members.update_permissions'
   | 'transactions.view'
+  | 'transactions.view_own'
+  | 'transactions.view_family'
   | 'transactions.create'
   | 'transactions.update'
   | 'transactions.delete'
@@ -39,13 +95,20 @@ export type PermissionKey =
   | 'goals.delete'
   | 'reports.view'
   | 'reports.export'
-  | 'audit.view';
+  | 'audit.view'
+  | 'notifications.receive'
+  | keyof RolePermissions;
 
 export interface User {
   id: string;
   name: string;
   email: string;
   avatar_url?: string;
+  phone?: string;
+  date_of_birth?: string;
+  gender?: string;
+  location?: string;
+  bio?: string;
   created_at: string;
   updated_at: string;
 }
@@ -69,6 +132,8 @@ export interface FamilyMember {
   status: 'active' | 'pending' | 'suspended';
   joined_at: string;
   created_at: string;
+  income_sharing_enabled?: boolean;
+  expense_sharing_enabled?: boolean;
   custom_permissions?: Partial<Record<PermissionKey, boolean>>;
   monthly_allowance?: number; // In paise
   monthly_spending_limit?: number; // In paise
@@ -76,11 +141,13 @@ export interface FamilyMember {
 
 export interface RoleDefinition {
   id: string;
-  name: SystemRoleType;
-  title: string;
+  name: string;
+  title?: string;
   description: string;
-  is_system_role: boolean;
+  is_system_role?: boolean;
+  is_custom?: boolean;
   default_permissions: PermissionKey[];
+  permissions?: Record<string, boolean | number | undefined>;
 }
 
 export interface Category {
@@ -153,7 +220,7 @@ export interface Account {
   created_at: string;
 }
 
-export type TransactionType = 'income' | 'expense' | 'transfer';
+export type TransactionType = 'income' | 'expense' | 'transfer' | 'refund' | 'adjustment';
 
 export interface Transaction {
   id: string;
@@ -161,16 +228,18 @@ export interface Transaction {
   user_id: string;
   account_id: string;
   category_id: string;
+  custom_category?: string | null;
   type: TransactionType;
   amount: number; // In paise
   description: string;
   transaction_date: string;
   payment_method: string;
+  notes?: string;
   is_shared: boolean;
   visibility?: VisibilityClassification;
   internal_transfer_type?: 'member_transfer' | 'allowance' | 'standard';
   idempotency_key?: string;
-  status: 'cleared' | 'pending' | 'reconciled';
+  status: 'cleared' | 'pending' | 'reconciled' | 'voided';
   receipt_url?: string;
   from_account_id?: string;
   to_account_id?: string;
@@ -226,6 +295,17 @@ export interface SavingsGoal {
   updated_at: string;
 }
 
+export type RequestType =
+  | 'permission_request'
+  | 'expense_approval'
+  | 'expense_correction'
+  | 'income_correction'
+  | 'add_member'
+  | 'add_family_member'
+  | 'remove_member'
+  | 'remove_family_member'
+  | 'custom_request';
+
 export interface ExpenseRequest {
   id: string;
   family_id: string;
@@ -235,6 +315,7 @@ export interface ExpenseRequest {
   category_id: string;
   title: string;
   description: string;
+  request_type?: RequestType;
   status: 'pending' | 'approved' | 'rejected' | 'cancelled';
   reviewed_by?: string;
   reviewer_name?: string;
