@@ -246,6 +246,7 @@ const AppInner: React.FC = () => {
               setRequestInitialData(null);
               setNewRequestModalOpen(true);
             }}
+            onOpenAffordability={() => setActiveTab('affordability')}
             setActiveTab={setActiveTab}
             onOpenImportModal={() => setImportModalOpen(true)}
           />
