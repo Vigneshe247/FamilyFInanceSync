@@ -10,6 +10,11 @@ import { useFamilyFinance } from '../../context/FamilyFinanceContext';
 import { usePermissions } from '../../context/FamilyContext';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from '../../router/Router';
+import { CreateFamilyModal } from '../modals/CreateFamilyModal';
+import { JoinFamilyModal } from '../modals/JoinFamilyModal';
+import { MyFamiliesModal } from '../modals/MyFamiliesModal';
+import { Plus, Key, FolderKanban } from 'lucide-react';
+
 import { ROLE_DISPLAY_NAMES, normalizeRole } from '../../utils/permissions';
 import {
   Bell,
@@ -43,6 +48,7 @@ interface TopMenubarProps {
   onOpenNewRequest: () => void;
   onOpenProfileModal: () => void;
   onOpenImportModal?: () => void;
+  onOpenViewSettings?: () => void;
 }
 
 export const TopMenubar: React.FC<TopMenubarProps> = ({
@@ -50,9 +56,17 @@ export const TopMenubar: React.FC<TopMenubarProps> = ({
   setActiveTab,
   onOpenProfileModal,
   onOpenImportModal,
+  onOpenViewSettings,
 }) => {
   const {
     family,
+    activeFamily,
+    allFamilies,
+    linkedFamilies,
+    switchActiveFamily,
+    demoUsers,
+    activeUserId,
+    switchDemoUser,
     members,
     currentMember,
     switchMember,
@@ -68,6 +82,14 @@ export const TopMenubar: React.FC<TopMenubarProps> = ({
   const { user, logout } = useAuth();
   const { navigate } = useRouter();
 
+    const [familyDropdownOpen, setFamilyDropdownOpen] = useState(false);
+  const [demoUserDropdownOpen, setDemoUserDropdownOpen] = useState(false);
+  const [createFamilyModalOpen, setCreateFamilyModalOpen] = useState(false);
+  const [joinFamilyModalOpen, setJoinFamilyModalOpen] = useState(false);
+  const [myFamiliesModalOpen, setMyFamiliesModalOpen] = useState(false);
+
+  const familyMenuRef = useRef<HTMLDivElement>(null);
+  const demoUserMenuRef = useRef<HTMLDivElement>(null);
   const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
   const [notifDropdownOpen, setNotifDropdownOpen] = useState(false);
   const [moreDropdownOpen, setMoreDropdownOpen] = useState(false);
@@ -78,6 +100,12 @@ export const TopMenubar: React.FC<TopMenubarProps> = ({
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
+      if (familyMenuRef.current && !familyMenuRef.current.contains(event.target as Node)) {
+        setFamilyDropdownOpen(false);
+      }
+      if (demoUserMenuRef.current && !demoUserMenuRef.current.contains(event.target as Node)) {
+        setDemoUserDropdownOpen(false);
+      }
       if (roleMenuRef.current && !roleMenuRef.current.contains(event.target as Node)) {
         setRoleDropdownOpen(false);
       }
@@ -100,12 +128,12 @@ export const TopMenubar: React.FC<TopMenubarProps> = ({
   const isHead = isFamilyHead;
   const isChild = isPermChild;
 
-  // Section 37 Navigation Structure
+  // Section 37 Navigation Structure (Streamlined for horizontal fit across all desktop viewports)
   const navTabs = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'transactions', label: 'My Finances', icon: Receipt },
-    { id: 'members', label: 'Family Members', icon: Users, hidden: !can('viewMembers') },
-    { id: 'permissions', label: 'Roles & Permissions', icon: Shield, hidden: !isHead },
+    { id: 'transactions', label: 'Finances', icon: Receipt },
+    { id: 'members', label: 'Members', icon: Users, hidden: !can('viewMembers') },
+    { id: 'permissions', label: 'Permissions', icon: Shield, hidden: !isHead },
     { id: 'requests', label: 'Requests', icon: GitPullRequest, badge: pendingRequestsCount, hidden: isViewer },
     { id: 'budgets', label: 'Budgets', icon: PiggyBank, hidden: !can('viewBudget') || isChild },
   ];
@@ -119,41 +147,184 @@ export const TopMenubar: React.FC<TopMenubarProps> = ({
     { id: 'recurring', label: 'Bills & Recurring', icon: Repeat, desc: 'Subscriptions & automated ledger', hidden: isChild },
   ];
 
+    const currentActiveFamily = activeFamily || family || allFamilies?.[0] || { id: 'fam-demo-001', name: 'Vignesh Family', currency: 'INR' };
   const moreModules = allMoreModules.filter(m => !m.hidden);
   const isMoreModuleActive = moreModules.some(m => m.id === activeTab);
   const activeMoreModule = moreModules.find(m => m.id === activeTab);
 
   return (
     <header className="neo-capsule-navbar">
-      {/* 1. Left Brand Pill */}
-      <div className="brand-pill" onClick={() => setActiveTab('dashboard')} style={{ cursor: 'pointer' }}>
-        <div className="brand-pill-logo">
-          <span>F</span>
+            {/* 1. Left Brand Pill & Active Family Selector (Section 3) */}
+      <div style={{ position: 'relative' }} ref={familyMenuRef}>
+        <div
+          className="brand-pill"
+          onClick={() => setFamilyDropdownOpen(!familyDropdownOpen)}
+          style={{ cursor: 'pointer', userSelect: 'none' }}
+          title="Active Family Selector — Click to switch or create family"
+        >
+          <div className="brand-pill-logo">
+            <span>F</span>
+          </div>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+              <span className="brand-pill-text" style={{ fontWeight: 800 }}>
+                {currentActiveFamily.name}
+              </span>
+              <ChevronDown size={14} style={{ color: 'var(--text-muted)', transition: 'transform 0.2s', transform: familyDropdownOpen ? 'rotate(180deg)' : 'none' }} />
+            </div>
+            <div className="brand-pill-subtitle" style={{ fontSize: '0.65rem', color: 'var(--mint-primary)', fontWeight: 600 }}>
+              {currentActiveFamily.currency} • Active Workspace
+            </div>
+          </div>
         </div>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-            <span className="brand-pill-text">{family.name}</span>
-            {isDemoMode && (
-              <span
+
+        {/* Active Family Selector Dropdown Menu */}
+        {familyDropdownOpen && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 'calc(100% + 8px)',
+              left: 0,
+              width: '280px',
+              background: 'var(--card-bg)',
+              borderRadius: '20px',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.22)',
+              padding: '0.65rem',
+              zIndex: 9999,
+              border: '1px solid var(--border-card)',
+              backdropFilter: 'blur(20px)',
+              animation: 'fadeIn 0.18s ease',
+            }}
+          >
+            <div
+              style={{
+                fontSize: '0.68rem',
+                fontWeight: 800,
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+                color: 'var(--text-muted)',
+                padding: '0.35rem 0.5rem',
+                borderBottom: '1px solid var(--border-subtle)',
+                marginBottom: '0.45rem',
+              }}
+            >
+              Linked Families ({linkedFamilies.length})
+            </div>
+
+            <div style={{ maxHeight: '220px', overflowY: 'auto' }}>
+              {linkedFamilies.map(fam => {
+                const isActive = currentActiveFamily.id === fam.family_id;
+                return (
+                  <div
+                    key={fam.family_id}
+                    onClick={() => {
+                      switchActiveFamily(fam.family_id);
+                      setFamilyDropdownOpen(false);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '0.55rem 0.65rem',
+                      borderRadius: '12px',
+                      cursor: 'pointer',
+                      background: isActive ? 'var(--bg-canvas)' : 'transparent',
+                      transition: 'background 0.15s ease',
+                      marginBottom: '0.2rem',
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '0.82rem', fontWeight: isActive ? 800 : 600, color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {fam.family_name}
+                      </div>
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'capitalize' }}>
+                        {fam.role} • {fam.member_count} members
+                      </div>
+                    </div>
+                    {isActive && <Check size={16} color="var(--mint-primary)" strokeWidth={2.5} />}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ borderTop: '1px solid var(--border-subtle)', margin: '0.45rem 0', paddingTop: '0.45rem' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setFamilyDropdownOpen(false);
+                  setCreateFamilyModalOpen(true);
+                }}
                 style={{
-                  background: 'rgba(217, 119, 6, 0.15)',
-                  color: '#D97706',
-                  fontSize: '0.58rem',
-                  fontWeight: 800,
-                  padding: '0.1rem 0.35rem',
-                  borderRadius: '6px',
-                  border: '1px solid rgba(217, 119, 6, 0.3)',
-                  letterSpacing: '0.04em',
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '0.5rem 0.65rem',
+                  borderRadius: '10px',
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--mint-primary)',
+                  fontWeight: 700,
+                  fontSize: '0.78rem',
+                  cursor: 'pointer',
+                  textAlign: 'left',
                 }}
               >
-                DEMO MODE
-              </span>
-            )}
+                <Plus size={15} /> Create New Family
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setFamilyDropdownOpen(false);
+                  setJoinFamilyModalOpen(true);
+                }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '0.5rem 0.65rem',
+                  borderRadius: '10px',
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text-main)',
+                  fontWeight: 600,
+                  fontSize: '0.78rem',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                <Key size={15} /> Join Family with Code
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setFamilyDropdownOpen(false);
+                  setMyFamiliesModalOpen(true);
+                }}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '0.5rem 0.65rem',
+                  borderRadius: '10px',
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  fontWeight: 600,
+                  fontSize: '0.78rem',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                <FolderKanban size={15} /> Manage My Families
+              </button>
+            </div>
           </div>
-          <div style={{ fontSize: '0.65rem', color: isDemoMode ? '#D97706' : 'var(--mint-primary)', fontWeight: 600 }}>
-            {isDemoMode ? 'Family Finance Sync' : '● Realtime Synced'}
-          </div>
-        </div>
+        )}
       </div>
 
       {/* 2. Center Pill Capsule Navigation Bar */}
@@ -211,14 +382,13 @@ export const TopMenubar: React.FC<TopMenubarProps> = ({
                 style={{
                   position: 'absolute',
                   top: 'calc(100% + 8px)',
-                  left: '50%',
-                  transform: 'translateX(-50%)',
-                  width: '300px',
+                  right: 0,
+                  width: '290px',
                   background: 'var(--card-bg)',
                   borderRadius: '20px',
                   boxShadow: '0 20px 50px rgba(0,0,0,0.22)',
                   padding: '0.65rem',
-                  zIndex: 1000,
+                  zIndex: 9999,
                   border: '1px solid var(--border-card)',
                   backdropFilter: 'blur(20px)',
                 }}
@@ -432,6 +602,26 @@ export const TopMenubar: React.FC<TopMenubarProps> = ({
           <User size={16} />
         </button>
 
+        {/* View & System Settings Circle Button (Placed beside Profile) */}
+        <button
+          className="action-circle-btn"
+          onClick={() => {
+            if (onOpenViewSettings) {
+              onOpenViewSettings();
+            } else {
+              setActiveTab('control_center');
+            }
+          }}
+          title="View & System Settings"
+          style={{
+            borderColor: activeTab === 'control_center' ? 'var(--mint-primary)' : undefined,
+            background: activeTab === 'control_center' ? 'rgba(5, 150, 105, 0.12)' : undefined,
+            color: activeTab === 'control_center' ? 'var(--mint-primary)' : undefined,
+          }}
+        >
+          <Settings size={16} />
+        </button>
+
         {/* Role Switcher & Member Menu (Far Right) */}
         <div style={{ position: 'relative' }} ref={roleMenuRef}>
           <div
@@ -449,6 +639,7 @@ export const TopMenubar: React.FC<TopMenubarProps> = ({
                 {currentMember.user.name}
               </div>
               <div
+                className="header-role-subtitle"
                 style={{
                   fontSize: '0.62rem',
                   fontWeight: 600,
@@ -659,6 +850,21 @@ export const TopMenubar: React.FC<TopMenubarProps> = ({
           )}
         </div>
       </div>
+          {/* Privacy & Linked Family Modals */}
+      <CreateFamilyModal
+        isOpen={createFamilyModalOpen}
+        onClose={() => setCreateFamilyModalOpen(false)}
+      />
+      <JoinFamilyModal
+        isOpen={joinFamilyModalOpen}
+        onClose={() => setJoinFamilyModalOpen(false)}
+      />
+      <MyFamiliesModal
+        isOpen={myFamiliesModalOpen}
+        onClose={() => setMyFamiliesModalOpen(false)}
+        onOpenCreateFamily={() => setCreateFamilyModalOpen(true)}
+        onOpenJoinFamily={() => setJoinFamilyModalOpen(true)}
+      />
     </header>
   );
 };

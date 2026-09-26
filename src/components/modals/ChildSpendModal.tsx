@@ -154,7 +154,7 @@ export const ChildSpendModal: React.FC<ChildSpendModalProps> = ({ isOpen, onClos
                 </div>
                 <h3 style={{ fontSize: '1.1rem', fontWeight: 700 }}>Enter Spending Amount</h3>
               </div>
-              <button className="btn btn-icon btn-sm" onClick={onClose}><X size={16} /></button>
+              <button className="btn btn-icon btn-sm" onClick={onClose}><X size={19} /></button>
             </div>
 
             <form onSubmit={handleSubmit}>

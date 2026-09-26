@@ -8,6 +8,9 @@ import { useFamilyFinance } from '../../context/FamilyFinanceContext';
 import { usePermissions } from '../../context/FamilyContext';
 import { formatPaise, formatDate } from '../../utils/currency';
 import { ROLE_DISPLAY_NAMES, normalizeRole } from '../../utils/permissions';
+import { OverviewChart, OverviewTimeframe } from './components/OverviewChart';
+import { QuickActionsCard } from './components/QuickActionsCard';
+import { SpendingBreakdownCard } from './components/SpendingBreakdownCard';
 import {
   Eye,
   EyeOff,
@@ -31,7 +34,11 @@ import {
   Square,
   Trash2,
   UploadCloud,
+  Settings,
 } from 'lucide-react';
+import { useViewSettings } from '../../context/ViewSettingsContext';
+import { PrivateFinancesView } from './components/PrivateFinancesView';
+import { Lock } from 'lucide-react';
 
 interface DashboardPageProps {
   onOpenNewTx: (initialType?: 'expense' | 'income') => void;
@@ -49,15 +56,21 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   onOpenImportModal,
 }) => {
   const {
+    activeFamily,
     currentMember,
+    activeUserId,
+    demoUsers,
     members,
     categories,
     transactions,
+    familyTransactions,
     accounts,
     requests,
     auditLogs,
     createGoal,
   } = useFamilyFinance();
+
+  const [dashboardScope, setDashboardScope] = useState<'family' | 'private'>('family');
 
   const {
     isFamilyHead,
@@ -75,7 +88,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     currentMember.role === 'SON' ||
     currentMember.role === 'DAUGHTER';
 
-  const [balanceVisible, setBalanceVisible] = useState(true);
+  const { settings, openViewSettingsModal } = useViewSettings();
+  const [balanceVisible, setBalanceVisible] = useState(!settings.dashboard.maskBalancesDefault);
 
   // Financial Plan To-Do Tasks State
   const [planTasks, setPlanTasks] = useState<Array<{ id: string; title: string; completed: boolean; tag: string }>>([
@@ -130,27 +144,31 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
   // Interactive Timeframe Dropdown State
   const [overviewTimeframe, setOverviewTimeframe] = useState<'this_month' | 'last_month' | 'q3' | 'yearly'>('this_month');
+  const [selectedMemberFilter, setSelectedMemberFilter] = useState<string>('all');
 
   // Role-Based Data Privacy Scoping (RBAC):
   // Family Head: Monitors ALL family data & wealth
   // Adult Member: Views shared family accounts + personal transactions
   // Child: Views ONLY child pocket balance, allowance tracker, child transactions & requests
+  // Section 17: Family Dashboard must calculate ONLY Authorized Family Transactions
+  // Private transactions are strictly excluded from family calculations!
   const scopedTransactions = useMemo(() => {
-    if (isHead) return transactions;
-    if (isChild) return transactions.filter(t => t.user_id === currentMember.user_id);
-    return transactions.filter(t => t.is_shared || t.user_id === currentMember.user_id);
-  }, [isHead, isChild, transactions, currentMember.user_id]);
+    if (isChild) {
+      return familyTransactions.filter(t => t.user_id === currentMember.user_id);
+    }
+    return familyTransactions;
+  }, [isChild, familyTransactions, currentMember.user_id]);
 
   const scopedAccounts = useMemo(() => {
-    if (isHead) return accounts;
+    const familyAccs = accounts.filter(a => a.family_id === activeFamily.id);
     if (isChild) {
-      const childAccounts = accounts.filter(
+      const childAccounts = familyAccs.filter(
         a => a.name.toLowerCase().includes('pocket') || a.name.toLowerCase().includes('child')
       );
-      return childAccounts.length > 0 ? childAccounts : accounts.slice(0, 1);
+      return childAccounts.length > 0 ? childAccounts : familyAccs.slice(0, 1);
     }
-    return accounts.filter(a => a.is_shared || a.name.includes(currentMember.user.name));
-  }, [isHead, isChild, accounts, currentMember.user.name]);
+    return familyAccs;
+  }, [isChild, accounts, activeFamily.id]);
 
   // Timeframe multiplier simulation
   const timeframeMultiplier = overviewTimeframe === 'last_month' ? 1.08 : overviewTimeframe === 'q3' ? 3.1 : overviewTimeframe === 'yearly' ? 11.5 : 1;
@@ -256,7 +274,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'center', flexWrap: 'wrap' }}>
               <div>
                 <div style={{ fontSize: '1.8rem', fontWeight: 800, fontFamily: 'var(--font-mono)' }}>
                   {formatPaise(childRemainingPaise)}
@@ -269,6 +287,15 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                 </div>
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Pending Requests</div>
               </div>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => openViewSettingsModal('dashboard')}
+                title="Dashboard Settings"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', borderRadius: '12px', padding: '0.45rem 0.75rem' }}
+              >
+                <Settings size={14} />
+                <span>Settings</span>
+              </button>
             </div>
           </div>
 
@@ -461,7 +488,82 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         </div>
       ) : (
         /* ================= EXECUTIVE FINOVA 3-COLUMN VIEW ================= */
-        <div className="finova-grid-3col">
+        <div>
+          {/* Family vs Private Dashboard Toggle (Sections 4 & 5) */}
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => setDashboardScope('family')}
+              style={{
+                borderRadius: '9999px',
+                padding: '0.45rem 1.15rem',
+                gap: '0.45rem',
+                fontWeight: 700,
+                fontSize: '0.82rem',
+                background: dashboardScope === 'family' ? 'var(--mint-primary)' : 'var(--bg-canvas-subtle)',
+                color: dashboardScope === 'family' ? '#FFFFFF' : 'var(--text-main)',
+                border: dashboardScope === 'family' ? '1px solid var(--mint-primary)' : '1px solid var(--border-subtle)',
+                boxShadow: dashboardScope === 'family' ? '0 4px 12px rgba(5, 150, 105, 0.25)' : 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+              }}
+            >
+              <Users size={15} />
+              <span>{activeFamily.name} Overview</span>
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => setDashboardScope('private')}
+              style={{
+                borderRadius: '9999px',
+                padding: '0.45rem 1.15rem',
+                gap: '0.45rem',
+                fontWeight: 700,
+                fontSize: '0.82rem',
+                background: dashboardScope === 'private' ? '#D97706' : 'var(--bg-canvas-subtle)',
+                color: dashboardScope === 'private' ? '#FFFFFF' : 'var(--text-main)',
+                border: dashboardScope === 'private' ? '1px solid #D97706' : '1px solid var(--border-subtle)',
+                boxShadow: dashboardScope === 'private' ? '0 4px 12px rgba(217, 119, 6, 0.25)' : 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+              }}
+            >
+              <Lock size={15} />
+              <span>My Private Finances ({demoUsers.find(u => u.id === activeUserId)?.name || currentMember.user.name})</span>
+            </button>
+          </div>
+
+          {dashboardScope === 'private' ? (
+            <PrivateFinancesView onOpenNewTx={onOpenNewTx} />
+          ) : (
+            <>
+          {/* Executive Header Banner */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+            <div>
+              <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-main)', margin: 0, letterSpacing: '-0.02em' }}>
+                {activeFamily.name} — Financial Overview
+              </h1>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', margin: 0, marginTop: '0.15rem' }}>
+                Authorized shared family ledger • Private transactions strictly excluded
+              </p>
+            </div>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => openViewSettingsModal('dashboard')}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', borderRadius: '12px', padding: '0.45rem 0.85rem' }}
+              title="Dashboard Settings"
+            >
+              <Settings size={14} />
+              <span>Dashboard Settings</span>
+            </button>
+          </div>
+
+          <div className="finova-grid-3col">
           {/* ================= COLUMN 1 (LEFT) ================= */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.15rem' }}>
             {/* 1. Total Balance Card */}
@@ -827,145 +929,20 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
           {/* ================= COLUMN 2 (CENTER) ================= */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.15rem' }}>
-            {/* 4. Financial Overview (Spline Area Chart) */}
-            <div className="neo-card">
-              <div className="neo-card-header">
-                <div>
-                  <div className="neo-card-title">Overview</div>
-                  <div className="neo-card-subtitle">
-                    {overviewTimeframe === 'this_month' && 'September 2026 Inflow vs Outflow'}
-                    {overviewTimeframe === 'last_month' && 'August 2026 Inflow vs Outflow'}
-                    {overviewTimeframe === 'q3' && 'Q3 2026 Quarterly Financial Inflow vs Outflow'}
-                    {overviewTimeframe === 'yearly' && 'FY 2026 YTD Annual Inflow vs Outflow'}
-                  </div>
-                </div>
-
-                {/* Interactive Timeframe Dropdown Selector */}
-                <select
-                  value={overviewTimeframe}
-                  onChange={e => setOverviewTimeframe(e.target.value as any)}
-                  style={{
-                    background: 'var(--bg-canvas)',
-                    border: '1px solid var(--border-card)',
-                    borderRadius: '9999px',
-                    padding: '0.28rem 0.75rem',
-                    fontSize: '0.75rem',
-                    fontWeight: 700,
-                    color: 'var(--text-main)',
-                    cursor: 'pointer',
-                    outline: 'none',
-                    boxShadow: 'var(--shadow-sm)',
-                  }}
-                >
-                  <option value="this_month">This Month (Sep 2026)</option>
-                  <option value="last_month">Last Month (Aug 2026)</option>
-                  <option value="q3">Quarterly (Q3 2026)</option>
-                  <option value="yearly">Yearly (FY 2026)</option>
-                </select>
-              </div>
-
-              {/* Metric stats row */}
-              <div style={{ display: 'flex', gap: '2rem', marginBottom: '1.25rem' }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: 'var(--mint-primary)' }}></span>
-                    <span>Income</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginTop: '0.2rem' }}>
-                    <span style={{ fontSize: '1.45rem', fontWeight: 800, fontFamily: 'var(--font-mono)' }}>
-                      {formatPaise(totalIncomePaise)}
-                    </span>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--mint-primary)', fontWeight: 700 }}>
-                      ↑ +8.4%
-                    </span>
-                  </div>
-                </div>
-
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: 'var(--sky-accent)' }}></span>
-                    <span>Expense</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem', marginTop: '0.2rem' }}>
-                    <span style={{ fontSize: '1.45rem', fontWeight: 800, fontFamily: 'var(--font-mono)' }}>
-                      {formatPaise(totalExpensePaise)}
-                    </span>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--coral-accent)', fontWeight: 700 }}>
-                      ↓ +3.2%
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Interactive Smooth Dual-Spline Area Chart */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '100%' }}>
-                <div style={{ position: 'relative', width: '100%', height: '145px' }}>
-                  <svg viewBox="0 0 500 160" style={{ width: '100%', height: '100%', overflow: 'hidden' }}>
-                    <defs>
-                      <linearGradient id="incomeGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#22A05B" stopOpacity="0.32" />
-                        <stop offset="100%" stopColor="#22A05B" stopOpacity="0.0" />
-                      </linearGradient>
-                      <linearGradient id="expenseGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#3E8BF5" stopOpacity="0.25" />
-                        <stop offset="100%" stopColor="#3E8BF5" stopOpacity="0.0" />
-                      </linearGradient>
-                    </defs>
-
-                    {/* Horizontal grid guide lines */}
-                    <line x1="0" y1="30" x2="500" y2="30" stroke="rgba(17, 26, 21, 0.05)" strokeDasharray="4 4" />
-                    <line x1="0" y1="80" x2="500" y2="80" stroke="rgba(17, 26, 21, 0.05)" strokeDasharray="4 4" />
-                    <line x1="0" y1="130" x2="500" y2="130" stroke="rgba(17, 26, 21, 0.05)" strokeDasharray="4 4" />
-
-                    {/* Income Area & Spline Line */}
-                    <path
-                      d="M 0,110 C 80,70 140,120 220,50 C 300,-10 380,80 500,40 L 500,160 L 0,160 Z"
-                      fill="url(#incomeGrad)"
-                    />
-                    <path
-                      d="M 0,110 C 80,70 140,120 220,50 C 300,-10 380,80 500,40"
-                      fill="none"
-                      stroke="#22A05B"
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                    />
-
-                    {/* Expense Area & Spline Line */}
-                    <path
-                      d="M 0,140 C 90,125 150,150 230,105 C 310,60 390,125 500,85 L 500,160 L 0,160 Z"
-                      fill="url(#expenseGrad)"
-                    />
-                    <path
-                      d="M 0,140 C 90,125 150,150 230,105 C 310,60 390,125 500,85"
-                      fill="none"
-                      stroke="#3E8BF5"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeDasharray="4 4"
-                    />
-
-                    {/* Peak Point Tooltip Marker */}
-                    <circle cx="220" cy="50" r="5" fill="#22A05B" stroke="#FFFFFF" strokeWidth="2" />
-                    <g transform="translate(180, 16)">
-                      <rect width="80" height="24" rx="12" fill="#1B241E" />
-                      <text x="40" y="16" fill="#FFFFFF" fontSize="10" fontWeight="bold" textAnchor="middle" fontFamily="monospace">
-                        +₹85,000
-                      </text>
-                    </g>
-                  </svg>
-                </div>
-
-                {/* X-axis date labels */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-muted)', padding: '0 1rem 0.25rem' }}>
-                  <span>1 Sep</span>
-                  <span>7 Sep</span>
-                  <span>14 Sep</span>
-                  <span>21 Sep</span>
-                  <span>28 Sep</span>
-                  <span>30 Sep</span>
-                </div>
-              </div>
-            </div>
+            {/* 4. Upgraded Financial Overview (Dynamic Spline Area Chart) */}
+            <OverviewChart
+              transactions={scopedTransactions}
+              totalIncomePaise={totalIncomePaise}
+              totalExpensePaise={totalExpensePaise}
+              timeframe={overviewTimeframe}
+              onTimeframeChange={setOverviewTimeframe}
+              members={members}
+              currentMember={currentMember}
+              isHead={isHead}
+              selectedMemberId={selectedMemberFilter}
+              onSelectMember={setSelectedMemberFilter}
+              onNavigateToMembers={() => setActiveTab('members')}
+            />
 
             {/* 5. Recent Transactions List */}
             <div className="neo-card">
@@ -1024,145 +1001,22 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
           {/* ================= COLUMN 3 (RIGHT) ================= */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.15rem' }}>
-            {/* 6. Quick Actions Dark Card */}
-            <div className="quick-actions-dark-card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ fontWeight: 700, fontSize: '0.98rem' }}>Quick Actions</div>
-                <button
-                  onClick={() => onOpenNewTx('expense')}
-                  style={{
-                    width: 26,
-                    height: 26,
-                    borderRadius: '50%',
-                    background: 'var(--mint-primary)',
-                    color: '#FFF',
-                    border: 'none',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                  }}
-                  title="Record new transaction"
-                >
-                  <Plus size={15} />
-                </button>
-              </div>
+            {/* 6. Upgraded Quick Actions Card */}
+            <QuickActionsCard
+              onOpenNewTx={onOpenNewTx}
+              onOpenNewRequest={onOpenNewRequest}
+              onOpenAffordability={onOpenAffordability}
+              setActiveTab={setActiveTab}
+            />
 
-              {/* 4 Square Action Tiles */}
-              <div className="quick-actions-grid">
-                <button className="action-tile-btn" onClick={() => onOpenNewTx('expense')}>
-                  <div className="action-tile-icon-wrap" style={{ background: 'rgba(34, 160, 91, 0.2)', color: 'var(--mint-vibrant)' }}>
-                    <Plus size={18} />
-                  </div>
-                  <span>Add Expense</span>
-                </button>
-
-                <button className="action-tile-btn" onClick={() => onOpenNewTx('income')}>
-                  <div className="action-tile-icon-wrap" style={{ background: 'rgba(62, 139, 245, 0.2)', color: 'var(--sky-accent)' }}>
-                    <ArrowUpRight size={17} />
-                  </div>
-                  <span>Add Income</span>
-                </button>
-
-                <button className="action-tile-btn" onClick={onOpenNewRequest}>
-                  <div className="action-tile-icon-wrap" style={{ background: 'rgba(229, 161, 30, 0.2)', color: 'var(--amber-accent)' }}>
-                    <Send size={16} />
-                  </div>
-                  <span>Request</span>
-                </button>
-
-                <button
-                  className="action-tile-btn"
-                  onClick={() => {
-                    if (onOpenAffordability) onOpenAffordability();
-                    else setActiveTab('affordability');
-                  }}
-                >
-                  <div className="action-tile-icon-wrap" style={{ background: 'rgba(155, 81, 224, 0.2)', color: 'var(--purple-accent)' }}>
-                    <Calculator size={16} />
-                  </div>
-                  <span>Afford This?</span>
-                </button>
-              </div>
-            </div>
-
-            {/* 7. Spending Breakdown (Donut Chart) */}
-            <div className="neo-card">
-              <div className="neo-card-header">
-                <div className="neo-card-title">Spending Breakdown</div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>This Month ▾</div>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1.15rem', margin: '0.4rem 0 0.8rem' }}>
-                {/* SVG Donut Chart */}
-                <div style={{ position: 'relative', width: '110px', height: '110px', flexShrink: 0 }}>
-                  <svg viewBox="0 0 42 42" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
-                    <circle cx="21" cy="21" r="15.915" fill="none" stroke="#E5F2E6" strokeWidth="6" />
-                    {/* Slices */}
-                    <circle cx="21" cy="21" r="15.915" fill="none" stroke="#22A05B" strokeWidth="6" strokeDasharray="35 65" strokeDashoffset="0" />
-                    <circle cx="21" cy="21" r="15.915" fill="none" stroke="#3E8BF5" strokeWidth="6" strokeDasharray="27 73" strokeDashoffset="-35" />
-                    <circle cx="21" cy="21" r="15.915" fill="none" stroke="#E5A11E" strokeWidth="6" strokeDasharray="15 85" strokeDashoffset="-62" />
-                    <circle cx="21" cy="21" r="15.915" fill="none" stroke="#9B51E0" strokeWidth="6" strokeDasharray="12 88" strokeDashoffset="-77" />
-                    <circle cx="21" cy="21" r="15.915" fill="none" stroke="#00B4B6" strokeWidth="6" strokeDasharray="11 89" strokeDashoffset="-89" />
-                  </svg>
-                  <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
-                    <span style={{ fontSize: '0.92rem', fontWeight: 800, fontFamily: 'var(--font-mono)' }}>
-                      {totalSpendingPaise > 0 ? formatPaise(totalSpendingPaise) : '₹56.9k'}
-                    </span>
-                    <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>Total</span>
-                  </div>
-                </div>
-
-                {/* Category Percentages */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', flex: 1, fontSize: '0.76rem' }}>
-                  {categorySpending.length > 0 ? (
-                    categorySpending.slice(0, 4).map(item => {
-                      const pct = totalSpendingPaise > 0 ? Math.round((item.amount / totalSpendingPaise) * 100) : 0;
-                      return (
-                        <div key={item.categoryId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                            <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: item.color }}></span>
-                            <span>{item.name}</span>
-                          </div>
-                          <span style={{ fontWeight: 700, fontFamily: 'var(--font-mono)' }}>{pct}%</span>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                          <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#22A05B' }}></span>
-                          <span>Housing</span>
-                        </div>
-                        <span style={{ fontWeight: 700, fontFamily: 'var(--font-mono)' }}>35%</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                          <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#3E8BF5' }}></span>
-                          <span>Food</span>
-                        </div>
-                        <span style={{ fontWeight: 700, fontFamily: 'var(--font-mono)' }}>27%</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                          <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#E5A11E' }}></span>
-                          <span>Transport</span>
-                        </div>
-                        <span style={{ fontWeight: 700, fontFamily: 'var(--font-mono)' }}>15%</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                          <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#9B51E0' }}></span>
-                          <span>Education</span>
-                        </div>
-                        <span style={{ fontWeight: 700, fontFamily: 'var(--font-mono)' }}>12%</span>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
+            {/* 7. Upgraded Spending Breakdown Card with Quick Tabs for Expense, Income, and Both */}
+            <SpendingBreakdownCard
+              transactions={scopedTransactions}
+              categories={categories}
+              totalSpendingPaise={totalSpendingPaise}
+              totalIncomePaise={totalIncomePaise}
+              onOpenNewTx={onOpenNewTx}
+            />
 
             {/* 8. Recent Activity / Audit Log */}
             <div className="neo-card">
@@ -1216,28 +1070,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             </div>
           </div>
         </div>
+            </>
+          )}
+        </div>
       )}
-
-      {/* ================= BOTTOM FLOATING TRUST PILLS ================= */}
-      <div className="bottom-floating-pills">
-        <button className="trust-pill-btn" onClick={() => setActiveTab('members')}>
-          <Users size={16} />
-          <span>{activeMembersCount} Active Family Members</span>
-          <ChevronRight size={14} />
-        </button>
-
-        <button className="trust-pill-btn trust-pill-center" onClick={() => setActiveTab('transactions')}>
-          <Landmark size={17} />
-          <span>{formatPaise(totalIncomePaise)} Total Inflow • Live Sync</span>
-          <ChevronRight size={16} />
-        </button>
-
-        <button className="trust-pill-btn" onClick={() => setActiveTab('control_center')}>
-          <ShieldCheck size={16} />
-          <span>99.9% Secure & Isolated</span>
-          <ChevronRight size={14} />
-        </button>
-      </div>
     </div>
   );
 };

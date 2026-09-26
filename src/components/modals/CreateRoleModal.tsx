@@ -52,7 +52,7 @@ export const CreateRoleModal: React.FC<CreateRoleModalProps> = ({ isOpen, onClos
             <h3 style={{ fontSize: '1.2rem', fontWeight: 700 }}>Create Custom Role</h3>
           </div>
           <button className="btn btn-icon btn-sm" onClick={onClose} aria-label="Close">
-            <X size={16} />
+            <X size={19} />
           </button>
         </div>
 

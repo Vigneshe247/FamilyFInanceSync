@@ -80,7 +80,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
             </h3>
           </div>
           <button className="btn btn-icon btn-sm" onClick={onClose} aria-label="Close">
-            <X size={16} />
+            <X size={19} />
           </button>
         </div>
 

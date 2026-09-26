@@ -57,8 +57,8 @@ export const AccountTransferModal: React.FC<AccountTransferModalProps> = ({ isOp
             <ArrowRightLeft size={18} color="var(--mint-primary)" />
             <h3 style={{ fontSize: '1.2rem', fontWeight: 700 }}>Transfer Funds Between Accounts</h3>
           </div>
-          <button className="btn-icon" onClick={onClose}>
-            <X size={16} />
+          <button className="btn-icon" onClick={onClose} aria-label="Close">
+            <X size={19} />
           </button>
         </div>
 

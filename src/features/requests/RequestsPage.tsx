@@ -15,7 +15,9 @@ import {
   ShieldCheck,
   AlertCircle,
   User,
+  Settings,
 } from 'lucide-react';
+import { useViewSettings } from '../../context/ViewSettingsContext';
 
 interface RequestsPageProps {
   onOpenNewRequest: () => void;
@@ -31,6 +33,7 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ onOpenNewRequest }) 
     approveRequest,
     rejectRequest,
   } = useFamilyFinance();
+  const { openViewSettingsModal } = useViewSettings();
 
   const [activeTab, setActiveTab] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
   const [reviewModalReqId, setReviewModalReqId] = useState<string | null>(null);
@@ -96,9 +99,20 @@ export const RequestsPage: React.FC<RequestsPageProps> = ({ onOpenNewRequest }) 
           </p>
         </div>
 
-        <button className="btn btn-primary btn-sm" onClick={onOpenNewRequest}>
-          <Plus size={15} /> Submit New Request
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <button className="btn btn-primary btn-sm" onClick={onOpenNewRequest}>
+            <Plus size={15} /> Submit New Request
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => openViewSettingsModal('requests')}
+            title="Requests View Settings"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+          >
+            <Settings size={14} />
+            <span>Settings</span>
+          </button>
+        </div>
       </div>
 
       {/* Rules Notice for Family Head / Co-Manager */}

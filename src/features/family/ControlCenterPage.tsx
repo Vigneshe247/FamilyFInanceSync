@@ -7,7 +7,7 @@
    - CHILD: My Allowance, Avatar, Wishlist Goals & Request Alerts
    ========================================================= */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useFamilyFinance } from '../../context/FamilyFinanceContext';
 import { formatPaise } from '../../utils/currency';
 import {
@@ -58,15 +58,21 @@ export const ControlCenterPage: React.FC<ControlCenterPageProps> = ({ setActiveT
     toggleTheme,
   } = useFamilyFinance();
 
-  const role = currentMember.role;
-  const isHead = role === 'FAMILY_HEAD';
-  const isCoManager = role === 'CO_MANAGER';
-  const isAdult = role === 'ADULT_MEMBER';
-  const isChild = role === 'CHILD';
+  const role = currentMember?.role || 'FAMILY_HEAD';
+  const normRole = (currentMember?.role || '').toLowerCase();
+  const isHead = normRole === 'family_head' || normRole.includes('head');
+  const isCoManager = normRole.includes('spouse') || normRole.includes('co_manager') || normRole.includes('comanager');
+  const isAdult = normRole.includes('adult');
+  const isViewer = normRole.includes('viewer');
+  const isChild = normRole.includes('child') || normRole === 'son' || normRole === 'daughter';
 
-  const canEditFamilyName = isHead || isCoManager;
+  const canEditFamilyName = (isHead || isCoManager || isAdult) && !isViewer && !isChild;
   const [isEditingFamilyName, setIsEditingFamilyName] = useState(false);
   const [familyNameInput, setFamilyNameInput] = useState(family.name);
+
+  useEffect(() => {
+    setFamilyNameInput(family.name);
+  }, [family.name]);
 
   // Profile Edit State inside Settings
   const [name, setName] = useState(currentMember.user.name);
@@ -462,7 +468,7 @@ export const ControlCenterPage: React.FC<ControlCenterPageProps> = ({ setActiveT
                       setFamilyNameInput(family.name);
                       setIsEditingFamilyName(true);
                     }}
-                    title="Change Family Name (Family Head & Spouse only)"
+                    title="Change Family Name"
                     style={{
                       padding: '0.2rem 0.55rem',
                       fontSize: '0.72rem',

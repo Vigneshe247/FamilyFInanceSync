@@ -5,7 +5,7 @@
    Supports avatar upload, preview, replace, and removal.
    ========================================================= */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useFamilyFinance } from '../../context/FamilyFinanceContext';
 import { usePermissions } from '../../context/FamilyContext';
 import { ROLE_DISPLAY_NAMES, normalizeRole } from '../../utils/permissions';
@@ -24,7 +24,28 @@ import {
   Check,
   Upload,
   Info,
+  ChevronDown,
 } from 'lucide-react';
+
+// Helper: convert display string like "24 February 2007" → "2007-02-24" for <input type="date">
+function toISODate(display: string): string {
+  if (!display) return '';
+  // Already ISO format
+  if (/^\d{4}-\d{2}-\d{2}$/.test(display)) return display;
+  const parsed = new Date(display);
+  if (!isNaN(parsed.getTime())) {
+    return parsed.toISOString().split('T')[0];
+  }
+  return '';
+}
+
+// Helper: convert ISO "2007-02-24" → "24 February 2007" for display
+function toDisplayDate(iso: string): string {
+  if (!iso) return '';
+  const parsed = new Date(iso + 'T00:00:00');
+  if (isNaN(parsed.getTime())) return iso;
+  return parsed.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+}
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -32,23 +53,50 @@ interface ProfileModalProps {
 }
 
 export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) => {
-  const { currentMember, family, updateUserProfile } = useFamilyFinance();
+  const { currentMember, family, members, updateUserProfile } = useFamilyFinance();
   const { isFamilyHead } = usePermissions();
 
+  // Family Head can switch which member they are editing
+  const [selectedMemberId, setSelectedMemberId] = useState(currentMember.id);
+  const activeMember = (members ?? []).find(m => m.id === selectedMemberId) || currentMember;
+
   const [isEditing, setIsEditing] = useState(false);
-  const [name, setName] = useState(currentMember.user.name || '');
-  const [phone, setPhone] = useState(currentMember.user.phone || '+91 98765 43210');
-  const [dob, setDob] = useState(currentMember.user.date_of_birth || '24 February 2007');
-  const [gender, setGender] = useState(currentMember.user.gender || 'Male');
-  const [location, setLocation] = useState(currentMember.user.location || 'Madurai, Tamil Nadu');
-  const [bio, setBio] = useState(currentMember.user.bio || 'Family member profile');
+  const [name, setName] = useState(activeMember.user.name || '');
+  const [email, setEmail] = useState(activeMember.user.email || '');
+  const [phone, setPhone] = useState(activeMember.user.phone || '+91 98765 43210');
+  // Store DOB as ISO string internally for the date input
+  const [dobIso, setDobIso] = useState(toISODate(activeMember.user.date_of_birth || ''));
+  const [gender, setGender] = useState(activeMember.user.gender || 'Male');
+  const [location, setLocation] = useState(activeMember.user.location || 'Madurai, Tamil Nadu');
+  const [bio, setBio] = useState(activeMember.user.bio || 'Family member profile');
   const [avatarUrl, setAvatarUrl] = useState<string>(
-    currentMember.user.avatar_url || 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&auto=format&fit=crop&q=80'
+    activeMember.user.avatar_url || 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&auto=format&fit=crop&q=80'
   );
   const [previewAvatar, setPreviewAvatar] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dateInputRef = useRef<HTMLInputElement>(null);
+
+  // Sync state whenever activeMember changes or modal opens/member switches
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedMemberId(currentMember.id);
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    setName(activeMember.user.name || '');
+    setEmail(activeMember.user.email || '');
+    setPhone(activeMember.user.phone || '+91 98765 43210');
+    setDobIso(toISODate(activeMember.user.date_of_birth || ''));
+    setGender(activeMember.user.gender || 'Male');
+    setLocation(activeMember.user.location || 'Madurai, Tamil Nadu');
+    setBio(activeMember.user.bio || 'Family member profile');
+    setAvatarUrl(activeMember.user.avatar_url || 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&auto=format&fit=crop&q=80');
+    setPreviewAvatar(null);
+    setIsEditing(false);
+  }, [selectedMemberId, isOpen]);
 
   if (!isOpen) return null;
 
@@ -79,9 +127,9 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    updateUserProfile(name, currentMember.user.email, avatarUrl, {
+    updateUserProfile(name, email, avatarUrl, {
       phone,
-      date_of_birth: dob,
+      date_of_birth: toDisplayDate(dobIso) || dobIso,
       gender,
       location,
       bio,
@@ -128,17 +176,33 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
                 Personal Profile
               </h3>
               <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>
-                Personal member identity & household details
+                {isFamilyHead ? 'Manage any family member\'s profile' : 'Personal member identity & household details'}
               </p>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="btn btn-secondary btn-sm"
-            style={{ borderRadius: '50%', width: 32, height: 32, padding: 0, justifyContent: 'center' }}
+            className="btn-icon"
+            style={{
+              width: 38,
+              height: 38,
+              minWidth: 38,
+              minHeight: 38,
+              borderRadius: '50%',
+              padding: 0,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              border: '1px solid var(--border-card)',
+              background: 'var(--card-bg-subtle)',
+              color: 'var(--text-main)',
+              transition: 'all 0.18s ease',
+            }}
+            title="Close"
           >
-            <X size={16} />
+            <X size={19} />
           </button>
         </div>
 
@@ -159,6 +223,31 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
             }}
           >
             <Check size={16} /> Profile updated successfully!
+          </div>
+        )}
+
+        {/* Family Head: Member Switcher */}
+        {isFamilyHead && (
+          <div style={{ marginBottom: '1rem' }}>
+            <label className="label" style={{ fontSize: '0.72rem', marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <Shield size={13} color="var(--mint-primary)" />
+              Editing Member (Family Head)
+            </label>
+            <div style={{ position: 'relative' }}>
+              <select
+                className="select"
+                value={selectedMemberId}
+                onChange={e => { setSelectedMemberId(e.target.value); }}
+                style={{ paddingRight: '2.2rem', fontWeight: 600, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none' }}
+              >
+                {(members ?? []).map(m => (
+                  <option key={m.id} value={m.id}>
+                    {m.user.name} {m.id === currentMember.id ? '(You)' : `— ${ROLE_DISPLAY_NAMES[normalizeRole(m.role)] || m.role}`}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={15} style={{ position: 'absolute', right: '0.65rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--text-muted)' }} />
+            </div>
           </div>
         )}
 
@@ -247,7 +336,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
             {name || currentMember.user.name}
           </h4>
           <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
-            {currentMember.user.email}
+            {email || currentMember.user.email}
           </span>
 
           <div style={{ display: 'flex', gap: '0.45rem', marginTop: '0.5rem' }}>
@@ -287,6 +376,15 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem', marginBottom: '1.25rem' }}>
               <div style={{ background: 'var(--bg-canvas)', padding: '0.75rem', borderRadius: '14px' }}>
                 <div style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+                  Email Address
+                </div>
+                <div style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-main)', marginTop: '0.2rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {email || currentMember.user.email}
+                </div>
+              </div>
+
+              <div style={{ background: 'var(--bg-canvas)', padding: '0.75rem', borderRadius: '14px' }}>
+                <div style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)' }}>
                   Phone Number
                 </div>
                 <div style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-main)', marginTop: '0.2rem' }}>
@@ -299,7 +397,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
                   Date of Birth
                 </div>
                 <div style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-main)', marginTop: '0.2rem' }}>
-                  {dob}
+                  {dobIso ? toDisplayDate(dobIso) : '—'}
                 </div>
               </div>
 
@@ -312,7 +410,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
                 </div>
               </div>
 
-              <div style={{ background: 'var(--bg-canvas)', padding: '0.75rem', borderRadius: '14px' }}>
+              <div style={{ background: 'var(--bg-canvas)', padding: '0.75rem', borderRadius: '14px', gridColumn: 'span 2' }}>
                 <div style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)' }}>
                   Location
                 </div>
@@ -349,15 +447,30 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
           </div>
         ) : (
           <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-            <div>
-              <label className="label" style={{ fontSize: '0.72rem' }}>Full Name</label>
-              <input
-                type="text"
-                className="input"
-                value={name}
-                onChange={e => setName(e.target.value)}
-                required
-              />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
+              <div>
+                <label className="label" style={{ fontSize: '0.72rem' }}>Full Name</label>
+                <input
+                  type="text"
+                  className="input"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  placeholder="e.g. Vignesh"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="label" style={{ fontSize: '0.72rem' }}>Email Address</label>
+                <input
+                  type="email"
+                  className="input"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="e.g. vignesh@family.demo"
+                  required
+                />
+              </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
@@ -374,15 +487,43 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
               </div>
 
               <div>
-                <label className="label" style={{ fontSize: '0.72rem' }}>Date of Birth</label>
-                <input
-                  type="text"
-                  className="input"
-                  value={dob}
-                  onChange={e => setDob(e.target.value)}
-                  placeholder="24 February 2007"
-                  required
-                />
+                <label className="label" style={{ fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <Calendar size={13} color="var(--mint-primary)" /> Date of Birth
+                </label>
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                  <input
+                    ref={dateInputRef}
+                    type="date"
+                    className="input hide-native-date-picker"
+                    value={dobIso}
+                    onChange={e => setDobIso(e.target.value)}
+                    max={new Date().toISOString().split('T')[0]}
+                    style={{ paddingRight: '2.6rem', cursor: 'pointer' }}
+                    required
+                  />
+                  <button
+                    type="button"
+                    title="Open calendar"
+                    onClick={() => dateInputRef.current?.showPicker?.()}
+                    style={{
+                      position: 'absolute',
+                      right: '0.5rem',
+                      background: 'var(--mint-primary)',
+                      border: 'none',
+                      borderRadius: '8px',
+                      width: 28,
+                      height: 28,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      color: '#fff',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Calendar size={14} />
+                  </button>
+                </div>
               </div>
             </div>
 

@@ -333,4 +333,38 @@ export const supabaseDataService = {
       console.warn('Audit log write deferred:', err);
     }
   },
+
+  /**
+   * Persist a member's custom permission overrides to Supabase (family_members table).
+   * Called by Family Head when clicking "Save Changes" on the Permissions Matrix.
+   */
+  async updateMemberPermissions(
+    memberId: string,
+    customPermissions: Partial<Record<string, boolean>>,
+    familyId: string,
+    actorUserId: string
+  ) {
+    try {
+      const { error } = await supabase
+        .from('family_members')
+        .update({ custom_permissions: customPermissions })
+        .eq('id', memberId);
+
+      if (error) throw error;
+
+      await this.logAudit({
+        family_id: familyId,
+        user_id: actorUserId,
+        action: 'MEMBER_PERMISSIONS_SAVED',
+        entity_type: 'family_member',
+        entity_id: memberId,
+        metadata: { custom_permissions: customPermissions },
+      });
+
+      return { success: true };
+    } catch (err: any) {
+      console.error('[Supabase] Error saving member permissions:', err);
+      return { success: false, error: err.message };
+    }
+  },
 };

@@ -5,6 +5,7 @@
 import {
   Family,
   FamilyMember,
+  FamilyMembership,
   RoleDefinition,
   Category,
   Account,
@@ -256,17 +257,147 @@ export const ROLE_DEFINITIONS: RoleDefinition[] = [
   },
 ];
 
-export const DEMO_FAMILY: Family = {
-  id: 'fam-demo-001',
-  name: 'Vignesh Family',
-  owner_id: 'user-raj',
-  currency: 'INR',
-  timezone: 'Asia/Kolkata',
-  created_at: '2026-01-01T09:00:00Z',
-  updated_at: '2026-09-23T00:00:00Z',
+export const DEMO_FAMILIES: Family[] = [
+  {
+    id: 'fam-demo-001',
+    name: 'Vignesh Family',
+    owner_id: 'user-raj',
+    currency: 'INR',
+    timezone: 'Asia/Kolkata',
+    description: 'Primary household wealth, shared utility bills & daily expenses',
+    country: 'India',
+    created_at: '2026-01-01T09:00:00Z',
+    updated_at: '2026-09-23T00:00:00Z',
+  },
+  {
+    id: 'fam-extended',
+    name: 'Extended Family',
+    owner_id: 'user-anand',
+    currency: 'INR',
+    timezone: 'Asia/Kolkata',
+    description: 'Ancestral properties, festival gatherings & family trusts',
+    country: 'India',
+    created_at: '2026-02-15T10:00:00Z',
+    updated_at: '2026-09-23T00:00:00Z',
+  },
+  {
+    id: 'fam-personal',
+    name: 'Personal Finance',
+    owner_id: 'user-vignesh',
+    currency: 'INR',
+    timezone: 'Asia/Kolkata',
+    description: 'Solo personal wealth, freelance revenue & private portfolio',
+    country: 'India',
+    created_at: '2026-03-01T12:00:00Z',
+    updated_at: '2026-09-23T00:00:00Z',
+  },
+];
+
+export const DEMO_FAMILY: Family = DEMO_FAMILIES[0];
+
+export interface DemoUserOption {
+  id: string;
+  name: string;
+  roleName: string;
+  email: string;
+  avatar_url: string;
+  defaultFamilyId: string;
+}
+
+export const DEMO_USERS: DemoUserOption[] = [
+  {
+    id: 'user-vignesh',
+    name: 'Vignesh',
+    roleName: 'Member / Son',
+    email: 'vignesh@example.com',
+    avatar_url: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&auto=format&fit=crop&q=80',
+    defaultFamilyId: 'fam-demo-001',
+  },
+  {
+    id: 'user-priya',
+    name: 'Priya',
+    roleName: 'Mother / Spouse (Admin)',
+    email: 'priya.kumar@family.demo',
+    avatar_url: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80',
+    defaultFamilyId: 'fam-demo-001',
+  },
+  {
+    id: 'user-rahul',
+    name: 'Rahul',
+    roleName: 'Brother (Member)',
+    email: 'rahul.kumar@family.demo',
+    avatar_url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
+    defaultFamilyId: 'fam-demo-001',
+  },
+];
+
+export const USER_LINKED_FAMILIES: Record<string, FamilyMembership[]> = {
+  'user-vignesh': [
+    {
+      family_id: 'fam-demo-001',
+      family_name: 'Vignesh Family',
+      role: 'member',
+      status: 'active',
+      member_count: 5,
+      description: 'Primary household wealth & shared expenses',
+      currency: 'INR',
+    },
+    {
+      family_id: 'fam-extended',
+      family_name: 'Extended Family',
+      role: 'admin',
+      status: 'active',
+      member_count: 3,
+      description: 'Ancestral properties & family gatherings',
+      currency: 'INR',
+    },
+    {
+      family_id: 'fam-personal',
+      family_name: 'Personal Finance',
+      role: 'owner',
+      status: 'active',
+      member_count: 1,
+      description: 'Personal solo finances',
+      currency: 'INR',
+    },
+  ],
+  'user-priya': [
+    {
+      family_id: 'fam-demo-001',
+      family_name: 'Vignesh Family',
+      role: 'admin',
+      status: 'active',
+      member_count: 5,
+      description: 'Primary household wealth & shared expenses',
+      currency: 'INR',
+    },
+  ],
+  'user-rahul': [
+    {
+      family_id: 'fam-demo-001',
+      family_name: 'Vignesh Family',
+      role: 'member',
+      status: 'active',
+      member_count: 5,
+      description: 'Primary household wealth & shared expenses',
+      currency: 'INR',
+    },
+  ],
+  'user-raj': [
+    {
+      family_id: 'fam-demo-001',
+      family_name: 'Vignesh Family',
+      role: 'owner',
+      status: 'active',
+      member_count: 5,
+      description: 'Primary household wealth & shared expenses',
+      currency: 'INR',
+    },
+  ],
 };
 
 export const DEMO_MEMBERS: FamilyMember[] = [
+  // --- Vignesh Family (5 Members) ---
   {
     id: 'mem-raj',
     family_id: 'fam-demo-001',
@@ -316,7 +447,7 @@ export const DEMO_MEMBERS: FamilyMember[] = [
     expense_sharing_enabled: true,
     joined_at: '2026-01-02T10:00:00Z',
     created_at: '2026-01-02T10:00:00Z',
-    monthly_allowance: 2500000, // ₹25,000
+    monthly_allowance: 2500000,
     monthly_spending_limit: 3000000,
   },
   {
@@ -332,7 +463,7 @@ export const DEMO_MEMBERS: FamilyMember[] = [
       date_of_birth: '24 February 2007',
       gender: 'Male',
       location: 'Madurai, Tamil Nadu',
-      bio: 'Family member profile',
+      bio: 'Family member profile & contributor',
       created_at: '2026-01-10T14:00:00Z',
       updated_at: '2026-09-23T00:00:00Z',
     },
@@ -342,8 +473,34 @@ export const DEMO_MEMBERS: FamilyMember[] = [
     expense_sharing_enabled: true,
     joined_at: '2026-01-10T14:00:00Z',
     created_at: '2026-01-10T14:00:00Z',
-    monthly_allowance: 500000, // ₹5,000
-    monthly_spending_limit: 500000, // ₹5,000
+    monthly_allowance: 500000,
+    monthly_spending_limit: 500000,
+  },
+  {
+    id: 'mem-rahul',
+    family_id: 'fam-demo-001',
+    user_id: 'user-rahul',
+    user: {
+      id: 'user-rahul',
+      name: 'Brother (Rahul Kumar)',
+      email: 'rahul.kumar@family.demo',
+      avatar_url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
+      phone: '+91 98403 45678',
+      date_of_birth: '14 July 2004',
+      gender: 'Male',
+      location: 'Madurai, Tamil Nadu',
+      bio: 'College student & part-time intern contributing to family expenses',
+      created_at: '2026-01-05T10:00:00Z',
+      updated_at: '2026-09-23T00:00:00Z',
+    },
+    role: 'son',
+    status: 'active',
+    income_sharing_enabled: true,
+    expense_sharing_enabled: true,
+    joined_at: '2026-01-05T10:00:00Z',
+    created_at: '2026-01-05T10:00:00Z',
+    monthly_allowance: 600000,
+    monthly_spending_limit: 600000,
   },
   {
     id: 'mem-ananya',
@@ -351,7 +508,7 @@ export const DEMO_MEMBERS: FamilyMember[] = [
     user_id: 'user-ananya',
     user: {
       id: 'user-ananya',
-      name: 'Daughter (Ananya Kumar)',
+      name: 'Sister (Ananya Kumar)',
       email: 'ananya.kumar@family.demo',
       avatar_url: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150&auto=format&fit=crop&q=80',
       phone: '+91 98404 56789',
@@ -368,60 +525,84 @@ export const DEMO_MEMBERS: FamilyMember[] = [
     expense_sharing_enabled: true,
     joined_at: '2026-01-12T10:00:00Z',
     created_at: '2026-01-12T10:00:00Z',
-    monthly_allowance: 400000, // ₹4,000
+    monthly_allowance: 400000,
     monthly_spending_limit: 400000,
   },
+
+  // --- Extended Family Members ---
   {
-    id: 'mem-lakshmi',
-    family_id: 'fam-demo-001',
-    user_id: 'user-lakshmi',
+    id: 'mem-ext-anand',
+    family_id: 'fam-extended',
+    user_id: 'user-anand',
     user: {
-      id: 'user-lakshmi',
-      name: 'Grandfather (Lakshmi Kumar)',
-      email: 'lakshmi.kumar@family.demo',
-      avatar_url: 'https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?w=150&auto=format&fit=crop&q=80',
-      phone: '+91 98405 67890',
-      date_of_birth: '15 March 1952',
-      gender: 'Male',
-      location: 'Madurai, Tamil Nadu',
-      bio: 'Retired senior advisor managing pension and healthcare expenses',
-      created_at: '2026-01-08T11:00:00Z',
+      id: 'user-anand',
+      name: 'Uncle (Anand Kumar)',
+      email: 'anand.kumar@family.demo',
+      avatar_url: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80',
+      phone: '+91 98405 11223',
+      created_at: '2026-02-15T10:00:00Z',
       updated_at: '2026-09-23T00:00:00Z',
     },
-    role: 'grandparent',
+    role: 'family_head',
     status: 'active',
-    income_sharing_enabled: true,
-    expense_sharing_enabled: true,
-    joined_at: '2026-01-08T11:00:00Z',
-    created_at: '2026-01-08T11:00:00Z',
-    monthly_allowance: 1000000, // ₹10,000
-    monthly_spending_limit: 1000000,
+    joined_at: '2026-02-15T10:00:00Z',
+    created_at: '2026-02-15T10:00:00Z',
   },
   {
-    id: 'mem-viewer',
-    family_id: 'fam-demo-001',
-    user_id: 'user-viewer',
+    id: 'mem-ext-meena',
+    family_id: 'fam-extended',
+    user_id: 'user-meena',
     user: {
-      id: 'user-viewer',
-      name: 'Family Viewer',
-      email: 'viewer@family.demo',
-      avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-      phone: '+91 98406 78901',
-      date_of_birth: '10 October 1995',
-      gender: 'Other',
-      location: 'Chennai, Tamil Nadu',
-      bio: 'Permitted guest viewer for family financial review',
-      created_at: '2026-01-15T16:00:00Z',
+      id: 'user-meena',
+      name: 'Aunt (Meena Kumar)',
+      email: 'meena.kumar@family.demo',
+      avatar_url: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
+      phone: '+91 98405 33445',
+      created_at: '2026-02-15T10:00:00Z',
       updated_at: '2026-09-23T00:00:00Z',
     },
-    role: 'viewer',
+    role: 'spouse',
     status: 'active',
-    income_sharing_enabled: false,
-    expense_sharing_enabled: false,
-    joined_at: '2026-01-15T16:00:00Z',
-    created_at: '2026-01-15T16:00:00Z',
-    monthly_allowance: 0,
-    monthly_spending_limit: 0,
+    joined_at: '2026-02-15T10:00:00Z',
+    created_at: '2026-02-15T10:00:00Z',
+  },
+  {
+    id: 'mem-ext-vignesh',
+    family_id: 'fam-extended',
+    user_id: 'user-vignesh',
+    user: {
+      id: 'user-vignesh',
+      name: 'Vignesh E',
+      email: 'vignesh@example.com',
+      avatar_url: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&auto=format&fit=crop&q=80',
+      phone: '+91 98765 43210',
+      created_at: '2026-02-15T10:00:00Z',
+      updated_at: '2026-09-23T00:00:00Z',
+    },
+    role: 'CO_MANAGER',
+    status: 'active',
+    joined_at: '2026-02-15T10:00:00Z',
+    created_at: '2026-02-15T10:00:00Z',
+  },
+
+  // --- Personal Finance Member (Vignesh solo) ---
+  {
+    id: 'mem-pers-vignesh',
+    family_id: 'fam-personal',
+    user_id: 'user-vignesh',
+    user: {
+      id: 'user-vignesh',
+      name: 'Vignesh E',
+      email: 'vignesh@example.com',
+      avatar_url: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&auto=format&fit=crop&q=80',
+      phone: '+91 98765 43210',
+      created_at: '2026-03-01T12:00:00Z',
+      updated_at: '2026-09-23T00:00:00Z',
+    },
+    role: 'family_head',
+    status: 'active',
+    joined_at: '2026-03-01T12:00:00Z',
+    created_at: '2026-03-01T12:00:00Z',
   },
 ];
 
@@ -456,6 +637,7 @@ export const DEMO_CATEGORIES: Category[] = [
 ];
 
 export const DEMO_ACCOUNTS: Account[] = [
+  // Vignesh Family Accounts
   {
     id: 'acc-hdfc',
     family_id: 'fam-demo-001',
@@ -497,6 +679,32 @@ export const DEMO_ACCOUNTS: Account[] = [
     currency: 'INR',
     is_shared: false,
     created_at: '2026-01-10T14:00:00Z',
+  },
+
+  // Extended Family Accounts
+  {
+    id: 'acc-ext-bank',
+    family_id: 'fam-extended',
+    name: 'Canara Ancestral Trust Bank',
+    type: 'bank',
+    balance: 38000000, // ₹3,80,000
+    currency: 'INR',
+    account_number_mask: '•••• 7712',
+    is_shared: true,
+    created_at: '2026-02-15T10:00:00Z',
+  },
+
+  // Personal Finance Accounts
+  {
+    id: 'acc-pers-kotak',
+    family_id: 'fam-personal',
+    name: 'Kotak Solo Freelance & Wealth',
+    type: 'bank',
+    balance: 12500000, // ₹1,25,000
+    currency: 'INR',
+    account_number_mask: '•••• 3390',
+    is_shared: false,
+    created_at: '2026-03-01T12:00:00Z',
   },
 ];
 

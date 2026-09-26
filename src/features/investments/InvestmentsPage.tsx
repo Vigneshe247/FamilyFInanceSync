@@ -19,10 +19,13 @@ import {
   Trash2,
   X,
   Sparkles,
+  Settings,
 } from 'lucide-react';
+import { useViewSettings } from '../../context/ViewSettingsContext';
 
 export const InvestmentsPage: React.FC = () => {
   const { investments, addInvestment, updateInvestmentValue, deleteInvestment, hasPermission } = useFamilyFinance();
+  const { openViewSettingsModal } = useViewSettings();
 
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [editModalAssetId, setEditModalAssetId] = useState<string | null>(null);
@@ -122,11 +125,22 @@ export const InvestmentsPage: React.FC = () => {
           </p>
         </div>
 
-        {canManage && (
-          <button className="btn btn-primary btn-sm" onClick={() => setAddModalOpen(true)}>
-            <Plus size={15} /> Add Investment Asset
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          {canManage && (
+            <button className="btn btn-primary btn-sm" onClick={() => setAddModalOpen(true)}>
+              <Plus size={15} /> Add Investment Asset
+            </button>
+          )}
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => openViewSettingsModal('investments')}
+            title="Investments View Settings"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+          >
+            <Settings size={14} />
+            <span>Settings</span>
           </button>
-        )}
+        </div>
       </div>
 
       {/* Top Stat Cards */}

@@ -14,10 +14,13 @@ import {
   CreditCard,
   BellRing,
   AlertCircle,
+  Settings,
 } from 'lucide-react';
+import { useViewSettings } from '../../context/ViewSettingsContext';
 
 export const RecurringPage: React.FC = () => {
   const { recurring, categories, accounts, hasPermission } = useFamilyFinance();
+  const { openViewSettingsModal } = useViewSettings();
 
   const [activeOnly, setActiveOnly] = useState(true);
 
@@ -48,9 +51,20 @@ export const RecurringPage: React.FC = () => {
           </p>
         </div>
 
-        <div className="sync-chip">
-          <BellRing size={14} />
-          <span>Active Reminders Enabled</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <div className="sync-chip">
+            <BellRing size={14} />
+            <span>Active Reminders Enabled</span>
+          </div>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => openViewSettingsModal('recurring')}
+            title="Recurring Bills Settings"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+          >
+            <Settings size={14} />
+            <span>Settings</span>
+          </button>
         </div>
       </div>
 

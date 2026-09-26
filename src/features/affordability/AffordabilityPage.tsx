@@ -14,7 +14,9 @@ import {
   ShieldAlert,
   Send,
   Sparkles,
+  Settings,
 } from 'lucide-react';
+import { useViewSettings } from '../../context/ViewSettingsContext';
 
 interface AffordabilityPageProps {
   onOpenNewRequestWithData?: (data: { title: string; amountRupees: string; categoryId: string; description: string }) => void;
@@ -28,6 +30,7 @@ export const AffordabilityPage: React.FC<AffordabilityPageProps> = ({ onOpenNewR
     savingsGoals,
     currentMember,
   } = useFamilyFinance();
+  const { openViewSettingsModal } = useViewSettings();
 
   const [purchaseAmountRupees, setPurchaseAmountRupees] = useState<string>('25000');
   const [purchaseTitle, setPurchaseTitle] = useState<string>('New Family Laptop');
@@ -80,13 +83,25 @@ export const AffordabilityPage: React.FC<AffordabilityPageProps> = ({ onOpenNewR
   return (
     <div className="content-page">
       {/* Header */}
-      <div style={{ marginBottom: '1.75rem' }}>
-        <h1 style={{ fontSize: '1.85rem', fontWeight: 700, color: 'var(--ink)' }}>
-          "Can I Afford This?" Decision Tool
-        </h1>
-        <p style={{ color: 'var(--ink-muted)', fontSize: '0.88rem' }}>
-          Objective mathematical simulation of purchasing power against family commitments and savings goals
-        </p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.75rem' }}>
+        <div>
+          <h1 style={{ fontSize: '1.85rem', fontWeight: 700, color: 'var(--ink)' }}>
+            "Can I Afford This?" Decision Tool
+          </h1>
+          <p style={{ color: 'var(--ink-muted)', fontSize: '0.88rem' }}>
+            Objective mathematical simulation of purchasing power against family commitments and savings goals
+          </p>
+        </div>
+
+        <button
+          className="btn btn-secondary btn-sm"
+          onClick={() => openViewSettingsModal('requests')}
+          title="Decision Tool & Request Settings"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+        >
+          <Settings size={14} />
+          <span>Settings</span>
+        </button>
       </div>
 
       <div className="grid-2col">

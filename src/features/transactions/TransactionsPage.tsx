@@ -18,8 +18,13 @@ import {
   CreditCard,
   Sparkles,
   Calendar,
+  Settings,
 } from 'lucide-react';
 import { AccountTransferModal } from '../../components/modals/AccountTransferModal';
+import { TransactionDetailsModal } from '../../components/modals/TransactionDetailsModal';
+import { Transaction } from '../../types';
+import { Lock, Users, Eye } from 'lucide-react';
+import { useViewSettings } from '../../context/ViewSettingsContext';
 
 interface TransactionsPageProps {
   onOpenNewTx: (initialType?: 'expense' | 'income') => void;
@@ -28,14 +33,23 @@ interface TransactionsPageProps {
 
 export const TransactionsPage: React.FC<TransactionsPageProps> = ({ onOpenNewTx }) => {
   const {
+    hasPermission,
+    deleteTransaction,
     transactions,
+    authorizedTransactions,
+    familyTransactions,
+    privateTransactions,
+    activeFamily,
+    activeUserId,
     categories,
     members,
     accounts,
     currentMember,
-    hasPermission,
-    deleteTransaction,
   } = useFamilyFinance();
+
+  const [viewScope, setViewScope] = useState<'all' | 'family' | 'private' | 'my_tx'>('all');
+  const [detailsModalTx, setDetailsModalTx] = useState<Transaction | null>(null);
+  const { settings, openViewSettingsModal } = useViewSettings();
 
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'income' | 'expense' | 'transfer'>('all');
@@ -51,9 +65,23 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({ onOpenNewTx 
   const isChild = currentMember.role === 'CHILD';
 
   // If child, only show their own transactions as required in Section 6 & 28
-  const accessibleTransactions = isChild
-    ? transactions.filter(t => t.user_id === currentMember.user_id)
-    : transactions;
+  // Section 6: View Scope Filtering
+  // "All" means All data the current user is authorized to access (never other users' private data)
+  const accessibleTransactions = React.useMemo(() => {
+    let pool = authorizedTransactions;
+    if (isChild) {
+      pool = authorizedTransactions.filter(t => t.user_id === currentMember.user_id);
+    }
+
+    if (viewScope === 'family') {
+      return familyTransactions;
+    } else if (viewScope === 'private') {
+      return privateTransactions;
+    } else if (viewScope === 'my_tx') {
+      return pool.filter(t => t.user_id === activeUserId);
+    }
+    return pool;
+  }, [authorizedTransactions, familyTransactions, privateTransactions, isChild, currentMember.user_id, viewScope, activeUserId]);
 
   const now = new Date();
   const todayStr = now.toISOString().slice(0, 10);
@@ -156,6 +184,15 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({ onOpenNewTx 
               </button>
             </>
           )}
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => openViewSettingsModal('transactions')}
+            title="Transactions View Settings"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+          >
+            <Settings size={14} />
+            <span>Settings</span>
+          </button>
         </div>
       </div>
 
@@ -171,6 +208,24 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({ onOpenNewTx 
         }}
       >
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center' }}>
+                    {/* Section 6: Family vs Private View Scope Selector */}
+          <select
+            className="select"
+            style={{
+              width: 'auto',
+              fontWeight: 700,
+              color: viewScope === 'private' ? '#D97706' : viewScope === 'family' ? 'var(--mint-primary)' : 'var(--text-main)',
+              border: viewScope === 'private' ? '2px solid #D97706' : viewScope === 'family' ? '2px solid var(--mint-primary)' : undefined,
+            }}
+            value={viewScope}
+            onChange={e => setViewScope(e.target.value as any)}
+          >
+            <option value="all">View: All Authorized Data</option>
+            <option value="family">View: Family Shared</option>
+            <option value="private">View: Private (Only You)</option>
+            <option value="my_tx">View: My Transactions</option>
+          </select>
+
           {/* Search Box */}
           <div style={{ flex: '1 1 240px', position: 'relative' }}>
             <Search
@@ -337,6 +392,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({ onOpenNewTx 
                 <th>Category</th>
                 <th>Description</th>
                 <th>Payment / Account</th>
+                <th>Visibility</th>
                 <th>Status</th>
                 <th style={{ textAlign: 'right' }}>Amount (INR)</th>
                 {hasPermission('transactions.delete') && <th style={{ width: '50px' }}></th>}
@@ -357,11 +413,11 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({ onOpenNewTx 
                   const isTransfer = tx.type === 'transfer';
 
                   return (
-                    <tr key={tx.id}>
-                      <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                    <tr key={tx.id} style={{ height: settings.transactions.rowDensity === 'compact' ? '38px' : '52px' }}>
+                      <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', padding: settings.transactions.rowDensity === 'compact' ? '0.4rem 0.75rem' : undefined }}>
                         {formatDate(tx.transaction_date)}
                       </td>
-                      <td>
+                      <td style={{ padding: settings.transactions.rowDensity === 'compact' ? '0.4rem 0.75rem' : undefined }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                           <span
                             style={{
@@ -376,7 +432,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({ onOpenNewTx 
                           </span>
                         </div>
                       </td>
-                      <td>
+                      <td style={{ padding: settings.transactions.rowDensity === 'compact' ? '0.4rem 0.75rem' : undefined }}>
                         <span
                           className="badge"
                           style={{
@@ -389,16 +445,66 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({ onOpenNewTx 
                           {isTransfer ? 'Transfer' : (cat?.name || 'General')}
                         </span>
                       </td>
-                      <td style={{ fontWeight: 600, color: 'var(--text-main)' }}>
-                        <div>{tx.description}</div>
+                      <td
+                        onClick={() => setDetailsModalTx(tx)}
+                        style={{
+                          fontWeight: 600,
+                          color: 'var(--text-main)',
+                          cursor: 'pointer',
+                          padding: settings.transactions.rowDensity === 'compact' ? '0.4rem 0.75rem' : undefined,
+                        }}
+                        title="Click to view full transaction details and edit privacy"
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <span>{tx.description}</span>
+                          <Eye size={12} color="var(--text-muted)" style={{ opacity: 0.6 }} />
+                        </div>
                       </td>
-                      <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)', padding: settings.transactions.rowDensity === 'compact' ? '0.4rem 0.75rem' : undefined }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                           <CreditCard size={14} />
                           <span>{tx.payment_method}</span>
                         </div>
                       </td>
-                      <td>
+                                            {/* Privacy Indicator Badge (Section 19) */}
+                      <td style={{ padding: settings.transactions.rowDensity === 'compact' ? '0.4rem 0.75rem' : undefined }}>
+                        {tx.visibility === 'private' || !tx.family_id ? (
+                          <span
+                            className="badge"
+                            title="Only you can see this transaction."
+                            style={{
+                              background: 'rgba(217, 119, 6, 0.12)',
+                              color: '#D97706',
+                              border: '1px solid rgba(217, 119, 6, 0.3)',
+                              fontSize: '0.68rem',
+                              fontWeight: 700,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                            }}
+                          >
+                            <Lock size={11} /> Private
+                          </span>
+                        ) : (
+                          <span
+                            className="badge"
+                            title={`Visible to authorized members of ${activeFamily.name}`}
+                            style={{
+                              background: 'rgba(5, 150, 105, 0.12)',
+                              color: 'var(--mint-primary)',
+                              border: '1px solid rgba(5, 150, 105, 0.3)',
+                              fontSize: '0.68rem',
+                              fontWeight: 700,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                            }}
+                          >
+                            <Users size={11} /> Family Shared
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ padding: settings.transactions.rowDensity === 'compact' ? '0.4rem 0.75rem' : undefined }}>
                         <span className="badge badge-sage" style={{ fontSize: '0.68rem' }}>
                           {tx.status}
                         </span>
@@ -411,6 +517,7 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({ onOpenNewTx 
                           fontSize: '0.95rem',
                           color: isTransfer ? 'var(--purple-accent)' : isExpense ? 'var(--coral-accent)' : 'var(--mint-primary)',
                           whiteSpace: 'nowrap',
+                          padding: settings.transactions.rowDensity === 'compact' ? '0.4rem 0.75rem' : undefined,
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.25rem' }}>
@@ -421,7 +528,15 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({ onOpenNewTx 
                           ) : (
                             <ArrowUpRight size={14} />
                           )}
-                          <span>{isTransfer ? formatPaise(tx.amount) : isExpense ? `-${formatPaise(tx.amount)}` : `+${formatPaise(tx.amount)}`}</span>
+                          <span>
+                            {settings.transactions.maskSensitiveAmounts
+                              ? '••••••••'
+                              : isTransfer
+                              ? formatPaise(tx.amount)
+                              : isExpense
+                              ? `-${formatPaise(tx.amount)}`
+                              : `+${formatPaise(tx.amount)}`}
+                          </span>
                         </div>
                       </td>
                       {hasPermission('transactions.delete') && (
@@ -454,6 +569,12 @@ export const TransactionsPage: React.FC<TransactionsPageProps> = ({ onOpenNewTx 
       <AccountTransferModal
         isOpen={transferModalOpen}
         onClose={() => setTransferModalOpen(false)}
+      />
+          {/* Transaction Details & Privacy Modal */}
+      <TransactionDetailsModal
+        transaction={detailsModalTx}
+        isOpen={Boolean(detailsModalTx)}
+        onClose={() => setDetailsModalTx(null)}
       />
     </div>
   );

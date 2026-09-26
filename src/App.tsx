@@ -37,6 +37,8 @@ import { NewTransactionModal } from './components/modals/NewTransactionModal';
 import { NewRequestModal } from './components/modals/NewRequestModal';
 import { ProfileModal } from './components/profile/ProfileModal';
 import { DataImportModal } from './components/modals/DataImportModal';
+import { ViewSettingsModal } from './components/modals/ViewSettingsModal';
+import { ViewSettingsProvider, useViewSettings } from './context/ViewSettingsContext';
 
 import {
   LayoutDashboard,
@@ -113,6 +115,7 @@ const AppInner: React.FC = () => {
   const { requests } = useFamilyFinance();
   const { can, isFamilyHead, isChild: isPermChild } = usePermissions();
   const isChild = isPermChild;
+  const { isSettingsModalOpen, closeViewSettingsModal, openViewSettingsModal } = useViewSettings();
 
   // Sync tab with currentPath
   useEffect(() => {
@@ -213,9 +216,6 @@ const AppInner: React.FC = () => {
       case 'recurring':
         return <RecurringPage />;
       case 'control_center':
-        if (!can('manageFamilySettings')) {
-          return <AccessRestricted onBackToDashboard={() => setActiveTab('dashboard')} message="Only Family Managers can access family settings." />;
-        }
         return <ControlCenterPage setActiveTab={setActiveTab} onOpenImportModal={() => setImportModalOpen(true)} />;
       case 'members':
         if (!can('viewMembers')) {
@@ -270,6 +270,7 @@ const AppInner: React.FC = () => {
             }}
             onOpenProfileModal={() => setProfileModalOpen(true)}
             onOpenImportModal={() => setImportModalOpen(true)}
+            onOpenViewSettings={() => openViewSettingsModal(activeTab as any)}
           />
 
           {/* Dynamic Page Body */}
@@ -349,6 +350,13 @@ const AppInner: React.FC = () => {
           isOpen={importModalOpen}
           onClose={() => setImportModalOpen(false)}
         />
+
+        {/* Dynamic Context-Aware View Settings Modal */}
+        <ViewSettingsModal
+          isOpen={isSettingsModalOpen}
+          onClose={closeViewSettingsModal}
+          onNavigateControlCenter={() => setActiveTab('control_center')}
+        />
       </div>
     </ProtectedRoute>
   );
@@ -359,7 +367,9 @@ export const App: React.FC = () => {
     <RouterProvider>
       <AuthProvider>
         <FamilyFinanceProvider>
-          <AppInner />
+          <ViewSettingsProvider>
+            <AppInner />
+          </ViewSettingsProvider>
         </FamilyFinanceProvider>
       </AuthProvider>
     </RouterProvider>

@@ -6,6 +6,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode, useCa
 import {
   Family,
   FamilyMember,
+  FamilyMembership,
   RoleDefinition,
   Category,
   Account,
@@ -31,7 +32,11 @@ import { calculateFamilySummary, FamilyFinancialSummary } from '../utils/financi
 import { getFamilyChannel } from '../lib/realtime/domain/familyRealtime';
 import {
   DEMO_FAMILY,
+  DEMO_FAMILIES,
   DEMO_MEMBERS,
+  DEMO_USERS,
+  USER_LINKED_FAMILIES,
+  DemoUserOption,
   ROLE_DEFINITIONS,
   DEMO_CATEGORIES,
   DEMO_ACCOUNTS,
@@ -51,6 +56,32 @@ import {
 import { normalizeRole } from '../utils/permissions';
 
 interface FamilyFinanceContextType {
+  // Privacy & Linked Family Architecture (Section 1-37)
+  allFamilies: Family[];
+  activeFamily: Family;
+  linkedFamilies: FamilyMembership[];
+  activeUserId: string;
+  demoUsers: DemoUserOption[];
+  switchDemoUser: (userId: string) => void;
+  switchActiveFamily: (familyId: string) => void;
+  createFamily: (name: string, description?: string, currency?: string, country?: string) => Family;
+  joinFamily: (inviteCode: string) => { success: boolean; message: string; family?: Family };
+  updateTransactionVisibility: (txId: string, newVisibility: 'private' | 'family', targetFamilyId?: string) => void;
+  authorizedTransactions: Transaction[];
+  familyTransactions: Transaction[];
+  privateTransactions: Transaction[];
+  privateSummary: {
+    privateIncome: number;
+    privateExpenses: number;
+    privateSavings: number;
+    privateTransactions: Transaction[];
+  };
+  activeFamilyMembers: FamilyMember[];
+  familyGoals: SavingsGoal[];
+  privateGoals: SavingsGoal[];
+  familyLoans: LoanItem[];
+  privateLoans: LoanItem[];
+
   family: Family;
   members: FamilyMember[];
   currentMember: FamilyMember;
@@ -97,6 +128,7 @@ interface FamilyFinanceContextType {
   grantAllMemberPermissions: (memberId: string) => void;
   revokeAllMemberPermissions: (memberId: string) => void;
   resetMemberPermissions: (memberId: string) => void;
+  savePermissionsToBackend: (changedMemberIds: string[]) => Promise<{ success: boolean; error?: string }>;
   inviteMember: (name: string, email: string, role: SystemRoleType, allowance?: number) => void;
   createInvitation: (role: SystemRoleType, email?: string) => FamilyInvitation;
   revokeInvitation: (invitationId: string) => void;
@@ -143,7 +175,7 @@ interface FamilyFinanceContextType {
 
 const FamilyFinanceContext = createContext<FamilyFinanceContextType | undefined>(undefined);
 
-const STORAGE_PREFIX = 'ffs_demo_v2_';
+const STORAGE_PREFIX = 'ffs_demo_privacy_v1_';
 
 function loadStorage<T>(key: string, fallback: T): T {
   try {
@@ -169,7 +201,7 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
 
   const [family, setFamily] = useState<Family>(() => loadStorage('family', DEMO_FAMILY));
   const [members, setMembers] = useState<FamilyMember[]>(() => loadStorage('members', DEMO_MEMBERS));
-  const [currentMemberId, setCurrentMemberId] = useState<string>(() => loadStorage('active_member_id', 'mem-raj'));
+  const [currentMemberId, setCurrentMemberId] = useState<string>(() => loadStorage('active_member_id', 'mem-vignesh'));
   const [isDemoMode, setIsDemoMode] = useState<boolean>(() => loadStorage('is_demo_mode', true));
 
   const checkReadOnly = useCallback((): boolean => {
@@ -193,10 +225,103 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
   const [invitations, setInvitations] = useState<FamilyInvitation[]>(() => loadStorage('invitations', []));
   const [allowances, setAllowances] = useState<AllowanceConfig[]>(() => loadStorage('allowances', []));
 
+  // Privacy & Linked Family State
+  const [allFamilies, setAllFamilies] = useState<Family[]>(() => loadStorage('all_families', DEMO_FAMILIES));
+  const [activeUserId, setActiveUserId] = useState<string>(() => loadStorage('active_demo_user_id', 'user-vignesh'));
+  const [linkedFamiliesMap, setLinkedFamiliesMap] = useState<Record<string, FamilyMembership[]>>(() => loadStorage('linked_families_map', USER_LINKED_FAMILIES));
+  
+  useEffect(() => saveStorage('all_families', allFamilies), [allFamilies]);
+  useEffect(() => saveStorage('active_demo_user_id', activeUserId), [activeUserId]);
+  useEffect(() => saveStorage('linked_families_map', linkedFamiliesMap), [linkedFamiliesMap]);
+
+  const activeFamily = family || allFamilies?.[0] || DEMO_FAMILIES[0];
+  const linkedFamilies = linkedFamiliesMap[activeUserId] || [
+    {
+      family_id: family.id,
+      family_name: family.name,
+      role: 'member',
+      status: 'active',
+      member_count: 5,
+      description: family.description,
+      currency: family.currency,
+    }
+  ];
+
+  // Scoped Data Collections
+  const activeFamilyMembers = React.useMemo(() => {
+    return members.filter(m => m.family_id === family.id);
+  }, [members, family.id]);
+
+  // Authorized Transactions for active user:
+  // 1. Created by active user (both private & family shared)
+  // 2. OR belongs to active family AND shared with family
+  // NEVER includes other members' private transactions!
+  const authorizedTransactions = React.useMemo(() => {
+    return transactions.filter(tx => {
+      if (tx.user_id === activeUserId) return true;
+      if (tx.family_id === family.id && (tx.visibility === 'family' || tx.visibility === 'FAMILY_SHARED' || tx.is_shared)) return true;
+      return false;
+    });
+  }, [transactions, activeUserId, family.id]);
+
+  // Family Transactions: ONLY shared family transactions for active family
+  const familyTransactions = React.useMemo(() => {
+    return transactions.filter(tx => {
+      return tx.family_id === family.id && (tx.visibility === 'family' || tx.visibility === 'FAMILY_SHARED' || (tx.is_shared && tx.visibility !== 'private'));
+    });
+  }, [transactions, family.id]);
+
+  // Private Transactions: ONLY created by active user and marked private
+  const privateTransactions = React.useMemo(() => {
+    return transactions.filter(tx => {
+      return tx.user_id === activeUserId && (tx.visibility === 'private' || tx.visibility === 'PERSONAL' || tx.family_id === null || !tx.is_shared);
+    });
+  }, [transactions, activeUserId]);
+
+  // Private Summary calculations (Section 5)
+  const privateSummary = React.useMemo(() => {
+    let privateIncome = 0;
+    let privateExpenses = 0;
+    privateTransactions.forEach(tx => {
+      if (tx.status === 'voided') return;
+      if (tx.type === 'income' || tx.type === 'refund') {
+        privateIncome += tx.amount;
+      } else if (tx.type === 'expense') {
+        privateExpenses += tx.amount;
+      }
+    });
+    return {
+      privateIncome,
+      privateExpenses,
+      privateSavings: Math.max(0, privateIncome - privateExpenses),
+      privateTransactions,
+    };
+  }, [privateTransactions]);
+
+  // Family Goals vs Private Goals
+  const familyGoals = React.useMemo(() => {
+    return savingsGoals.filter(g => g.family_id === family.id && (g.visibility === 'family' || !g.visibility));
+  }, [savingsGoals, family.id]);
+
+  const privateGoals = React.useMemo(() => {
+    return savingsGoals.filter(g => g.created_by === activeUserId && (g.visibility === 'private' || g.family_id === null));
+  }, [savingsGoals, activeUserId]);
+
+  // Family Loans vs Private Loans
+  const familyLoans = React.useMemo(() => {
+    return loans.filter(l => l.family_id === family.id && (l.visibility === 'family' || !l.visibility));
+  }, [loans, family.id]);
+
+  const privateLoans = React.useMemo(() => {
+    return loans.filter(l => (l.user_id === activeUserId || !l.family_id) && (l.visibility === 'private' || l.family_id === null));
+  }, [loans, activeUserId]);
+
+
   // Centralized Financial Aggregation Engine (Sections 2, 11, 21, 26, 46)
   const summary = React.useMemo(() => {
-    return calculateFamilySummary(transactions, accounts);
-  }, [transactions, accounts]);
+    const familyAccs = accounts.filter(a => a.family_id === family.id);
+    return calculateFamilySummary(familyTransactions, familyAccs);
+  }, [familyTransactions, accounts, family.id]);
 
   // Supabase Real-Time Channel Subscription (Sections 8, 10, 36)
   useEffect(() => {
@@ -354,7 +479,7 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
   }, [currentMember.role]);
 
   // Action: Add Transaction
-  const addTransaction = useCallback((txData: Omit<Transaction, 'id' | 'created_at' | 'updated_at' | 'family_id'>): Transaction => {
+  const addTransaction = useCallback((txData: Omit<Transaction, 'id' | 'created_at' | 'updated_at' | 'family_id'> & { family_id?: string | null; visibility?: string }): Transaction => {
     if (checkReadOnly()) {
       return {
         ...txData,
@@ -365,10 +490,13 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
       } as Transaction;
     }
 
+    const isPrivate = txData.visibility === 'private';
     const newTx: Transaction = {
       ...txData,
       id: `tx-${Date.now()}`,
-      family_id: family.id,
+      family_id: isPrivate ? null : (txData.family_id || family.id),
+      visibility: txData.visibility || 'private',
+      is_shared: !isPrivate,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -830,6 +958,32 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
     logAudit('MEMBER_PERMISSIONS_RESET_DEFAULTS', 'permission', memberId);
   }, [logAudit]);
 
+  // Action: Save Permission Changes to Supabase Backend
+  const savePermissionsToBackend = useCallback(async (changedMemberIds: string[]): Promise<{ success: boolean; error?: string }> => {
+    // In demo mode: changes are already persisted to localStorage via the members useEffect
+    if (isDemoMode || family.id.startsWith('fam-demo')) {
+      return { success: true };
+    }
+    try {
+      const targets = members.filter(m => changedMemberIds.includes(m.id));
+      await Promise.all(
+        targets.map(m =>
+          supabaseDataService.updateMemberPermissions(
+            m.id,
+            m.custom_permissions || {},
+            family.id,
+            currentMember.user_id
+          )
+        )
+      );
+      logAudit('PERMISSIONS_BATCH_SAVED', 'permission', family.id, { count: targets.length });
+      return { success: true };
+    } catch (err: any) {
+      console.error('[Context] savePermissionsToBackend failed:', err);
+      return { success: false, error: err.message };
+    }
+  }, [isDemoMode, family.id, members, currentMember.user_id, logAudit]);
+
   // Action: Invite Member
   const inviteMember = useCallback((name: string, email: string, role: SystemRoleType, allowance?: number) => {
     const newUserId = `user-${Date.now()}`;
@@ -1256,29 +1410,39 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
     logAudit('PROFILE_UPDATED', 'user', currentMember.user_id, { name, email, ...extra });
   }, [currentMember.user_id, currentMemberId, logAudit]);
 
-  // Action: Update Family Name (Restricted strictly to FAMILY_HEAD and CO_MANAGER)
+  // Action: Update Family Name (Restricted to authorized Family Members)
   const updateFamilyName = useCallback((newName: string) => {
     const trimmed = newName.trim();
     if (!trimmed) return;
 
-    const isHead = currentMember.role === 'FAMILY_HEAD';
-    const isCoManager = currentMember.role === 'CO_MANAGER';
+    const normRole = (currentMember?.role || '').toLowerCase();
+    const isHead = normRole === 'family_head' || normRole.includes('head');
+    const isCoManager = normRole.includes('spouse') || normRole.includes('co_manager') || normRole.includes('comanager');
+    const isAdult = normRole.includes('adult');
+    const isViewer = normRole.includes('viewer');
+    const isChild = normRole.includes('child') || normRole === 'son' || normRole === 'daughter';
 
-    if (!isHead && !isCoManager) {
+    const isFamilyMember = (isHead || isCoManager || isAdult) && !isViewer && !isChild;
+
+    if (!isFamilyMember) {
       addNotification(
         currentMember.user_id,
         'member_activity',
         'Permission Denied',
-        'Only the Family Head and Spouse (Co-Manager) are authorized to edit the family name.'
+        'Only authorized family members can edit the family name.'
       );
       return;
     }
 
-    setFamily(prev => ({
-      ...prev,
-      name: trimmed,
-      updated_at: new Date().toISOString(),
-    }));
+    setFamily(prev => {
+      const updated = {
+        ...prev,
+        name: trimmed,
+        updated_at: new Date().toISOString(),
+      };
+      saveStorage('family', updated);
+      return updated;
+    });
 
     logAudit('family.name_updated', 'family', family.id, {
       previous_name: family.name,
@@ -1292,7 +1456,7 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
       'Family Name Updated',
       `Family name was successfully updated to "${trimmed}".`
     );
-  }, [currentMember.role, currentMember.user_id, family.id, family.name, logAudit, addNotification]);
+  }, [currentMember, family.id, family.name, logAudit, addNotification]);
 
   // Reset to demo defaults
   const resetToDemoDefaults = useCallback(() => {
@@ -1623,9 +1787,203 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
     return newMember;
   }, [lookupInvitation, family.id, logAudit]);
 
+  // Demo User Switcher (Section 30)
+  const switchDemoUser = useCallback((userId: string) => {
+    setActiveUserId(userId);
+    // Find member for this user in current family
+    const memberInFamily = members.find(m => m.user_id === userId && m.family_id === family.id);
+    if (memberInFamily) {
+      setCurrentMemberId(memberInFamily.id);
+    } else {
+      // Check user's linked families and switch to default if not in current family
+      const userFamilies = linkedFamiliesMap[userId] || [];
+      if (userFamilies.length > 0) {
+        const targetFam = allFamilies.find(f => f.id === userFamilies[0].family_id);
+        if (targetFam) {
+          setFamily(targetFam);
+          const memberInTarget = members.find(m => m.user_id === userId && m.family_id === targetFam.id);
+          if (memberInTarget) setCurrentMemberId(memberInTarget.id);
+        }
+      }
+    }
+  }, [family.id, members, allFamilies, linkedFamiliesMap]);
+
+  // Active Family Switcher (Section 3 & 22)
+  const switchActiveFamily = useCallback((familyId: string) => {
+    const target = allFamilies.find(f => f.id === familyId);
+    if (!target) return;
+    setFamily(target);
+    const memberInTarget = members.find(m => m.family_id === target.id && m.user_id === activeUserId);
+    if (memberInTarget) {
+      setCurrentMemberId(memberInTarget.id);
+    } else {
+      const firstMember = members.find(m => m.family_id === target.id);
+      if (firstMember) setCurrentMemberId(firstMember.id);
+    }
+  }, [allFamilies, members, activeUserId]);
+
+  // Create Family (Section 12)
+  const createFamily = useCallback((name: string, description?: string, currency = 'INR', country = 'India'): Family => {
+    const newFamId = `fam-${Date.now()}`;
+    const newFam: Family = {
+      id: newFamId,
+      name,
+      description: description || 'New family workspace',
+      currency,
+      country,
+      owner_id: activeUserId,
+      timezone: 'Asia/Kolkata',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    setAllFamilies(prev => [...prev, newFam]);
+    setFamily(newFam);
+
+    const newMember: FamilyMember = {
+      id: `mem-${Date.now()}`,
+      family_id: newFamId,
+      user_id: activeUserId,
+      user: currentMember.user,
+      role: 'FAMILY_HEAD',
+      status: 'active',
+      income_sharing_enabled: true,
+      expense_sharing_enabled: true,
+      joined_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+    };
+    setMembers(prev => [...prev, newMember]);
+    setCurrentMemberId(newMember.id);
+
+    setLinkedFamiliesMap(prev => ({
+      ...prev,
+      [activeUserId]: [
+        ...(prev[activeUserId] || []),
+        {
+          family_id: newFamId,
+          family_name: name,
+          role: 'owner',
+          status: 'active',
+          member_count: 1,
+          description,
+          currency,
+          joined_at: new Date().toISOString(),
+        },
+      ],
+    }));
+
+    return newFam;
+  }, [activeUserId, currentMember.user]);
+
+  // Join Family (Section 11)
+  const joinFamily = useCallback((inviteCode: string) => {
+    const cleanCode = inviteCode.trim().toUpperCase();
+    if (!cleanCode) return { success: false, message: 'Please enter a valid family invitation code.' };
+
+    let target = allFamilies.find(f => f.id.toUpperCase().includes(cleanCode) || f.name.toUpperCase().includes(cleanCode));
+    if (!target) {
+      target = {
+        id: `fam-join-${Date.now()}`,
+        name: `Linked Family (${cleanCode})`,
+        owner_id: 'user-shared',
+        currency: 'INR',
+        timezone: 'Asia/Kolkata',
+        description: `Connected via invite code ${cleanCode}`,
+        country: 'India',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      setAllFamilies(prev => [...prev, target!]);
+    }
+
+    const userLinks = linkedFamiliesMap[activeUserId] || [];
+    if (!userLinks.some(l => l.family_id === target!.id)) {
+      setLinkedFamiliesMap(prev => ({
+        ...prev,
+        [activeUserId]: [
+          ...(prev[activeUserId] || []),
+          {
+            family_id: target!.id,
+            family_name: target!.name,
+            role: 'member',
+            status: 'active',
+            member_count: 4,
+            description: target!.description,
+            currency: target!.currency,
+            joined_at: new Date().toISOString(),
+          },
+        ],
+      }));
+    }
+
+    const existingMember = members.find(m => m.family_id === target!.id && m.user_id === activeUserId);
+    if (!existingMember) {
+      const newMember: FamilyMember = {
+        id: `mem-joined-${Date.now()}`,
+        family_id: target!.id,
+        user_id: activeUserId,
+        user: currentMember.user,
+        role: 'ADULT_MEMBER',
+        status: 'active',
+        joined_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+      };
+      setMembers(prev => [...prev, newMember]);
+      setCurrentMemberId(newMember.id);
+    } else {
+      setCurrentMemberId(existingMember.id);
+    }
+
+    setFamily(target);
+    return { success: true, message: `Successfully joined ${target.name}!`, family: target };
+  }, [allFamilies, activeUserId, currentMember.user, linkedFamiliesMap, members]);
+
+  // Update Transaction Visibility (Section 21)
+  const updateTransactionVisibility = useCallback((txId: string, newVisibility: 'private' | 'family', targetFamilyId?: string) => {
+    setTransactions(prev => prev.map(t => {
+      if (t.id !== txId) return t;
+      if (newVisibility === 'private') {
+        return {
+          ...t,
+          visibility: 'private',
+          family_id: null,
+          is_shared: false,
+          updated_at: new Date().toISOString(),
+        };
+      } else {
+        return {
+          ...t,
+          visibility: 'family',
+          family_id: targetFamilyId || family.id,
+          is_shared: true,
+          updated_at: new Date().toISOString(),
+        };
+      }
+    }));
+  }, [family.id]);
+
   return (
     <FamilyFinanceContext.Provider
       value={{
+        allFamilies,
+        activeFamily,
+        linkedFamilies,
+        activeUserId,
+        demoUsers: DEMO_USERS,
+        switchDemoUser,
+        switchActiveFamily,
+        createFamily,
+        joinFamily,
+        updateTransactionVisibility,
+        authorizedTransactions,
+        familyTransactions,
+        privateTransactions,
+        privateSummary,
+        activeFamilyMembers,
+        familyGoals,
+        privateGoals,
+        familyLoans,
+        privateLoans,
         family,
         members,
         currentMember,
@@ -1670,6 +2028,7 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
         grantAllMemberPermissions,
         revokeAllMemberPermissions,
         resetMemberPermissions,
+        savePermissionsToBackend,
         inviteMember,
         createInvitation,
         revokeInvitation,

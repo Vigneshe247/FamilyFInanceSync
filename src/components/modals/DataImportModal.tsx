@@ -150,8 +150,8 @@ export const DataImportModal: React.FC<DataImportModalProps> = ({ isOpen, onClos
               </p>
             </div>
           </div>
-          <button className="btn-icon" onClick={onClose}>
-            <X size={16} />
+          <button className="btn-icon" onClick={onClose} aria-label="Close">
+            <X size={19} />
           </button>
         </div>
 

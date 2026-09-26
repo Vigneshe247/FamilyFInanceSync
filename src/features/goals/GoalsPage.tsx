@@ -18,10 +18,27 @@ import {
   ShieldCheck,
   Plane,
   HeartHandshake,
+  Settings,
 } from 'lucide-react';
+import { useViewSettings } from '../../context/ViewSettingsContext';
 
 export const GoalsPage: React.FC = () => {
-  const { savingsGoals, contributeToGoal, createGoal, hasPermission } = useFamilyFinance();
+  const {
+    savingsGoals,
+    familyGoals,
+    privateGoals,
+    activeFamily,
+    allFamilies,
+    activeUserId,
+    contributeToGoal,
+    createGoal,
+    hasPermission,
+  } = useFamilyFinance();
+
+  const [goalsTab, setGoalsTab] = useState<'family' | 'private'>('family');
+  const [goalVisibility, setGoalVisibility] = useState<'family' | 'private'>('family');
+  const [targetFamilyId, setTargetFamilyId] = useState<string>(activeFamily.id);
+  const { openViewSettingsModal } = useViewSettings();
 
   const [contributeGoalId, setContributeGoalId] = useState<string | null>(null);
   const [contributeRupees, setContributeRupees] = useState('');
@@ -66,9 +83,11 @@ export const GoalsPage: React.FC = () => {
       description: goalDescription.trim(),
       target_amount: targetPaise,
       target_date: goalTargetDate,
-      created_by: 'user',
+      created_by: activeUserId,
+      visibility: goalVisibility,
+      family_id: goalVisibility === 'family' ? targetFamilyId : null,
       status: 'in_progress',
-    });
+    } as any);
 
     setNewGoalModalOpen(false);
     setGoalName('');
@@ -76,8 +95,9 @@ export const GoalsPage: React.FC = () => {
     setGoalDescription('');
   };
 
-  const totalSavedPaise = savingsGoals.reduce((sum, g) => sum + g.current_amount, 0);
-  const totalTargetPaise = savingsGoals.reduce((sum, g) => sum + g.target_amount, 0);
+  const displayedGoals = goalsTab === 'family' ? familyGoals : privateGoals;
+  const totalSavedPaise = displayedGoals.reduce((sum, g) => sum + g.current_amount, 0);
+  const totalTargetPaise = displayedGoals.reduce((sum, g) => sum + g.target_amount, 0);
 
   return (
     <div className="content-page">
@@ -101,11 +121,22 @@ export const GoalsPage: React.FC = () => {
           </p>
         </div>
 
-        {canCreate && (
-          <button className="btn btn-primary btn-sm" onClick={() => setNewGoalModalOpen(true)}>
-            <Plus size={15} /> Create Savings Goal
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          {canCreate && (
+            <button className="btn btn-primary btn-sm" onClick={() => setNewGoalModalOpen(true)}>
+              <Plus size={15} /> Create Savings Goal
+            </button>
+          )}
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => openViewSettingsModal('goals')}
+            title="Goals View Settings"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+          >
+            <Settings size={14} />
+            <span>Settings</span>
           </button>
-        )}
+        </div>
       </div>
 
       {/* Overview Stat Cards */}
@@ -142,9 +173,45 @@ export const GoalsPage: React.FC = () => {
         </div>
       </div>
 
+            {/* Section 24: Family vs Private Goals Toggle */}
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={() => setGoalsTab('family')}
+          style={{
+            borderRadius: '9999px',
+            padding: '0.45rem 1rem',
+            fontWeight: 700,
+            fontSize: '0.8rem',
+            background: goalsTab === 'family' ? 'var(--mint-primary)' : 'var(--bg-canvas-subtle)',
+            color: goalsTab === 'family' ? '#FFFFFF' : 'var(--text-main)',
+            border: goalsTab === 'family' ? '1px solid var(--mint-primary)' : '1px solid var(--border-subtle)',
+          }}
+        >
+          Family Goals ({familyGoals.length})
+        </button>
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={() => setGoalsTab('private')}
+          style={{
+            borderRadius: '9999px',
+            padding: '0.45rem 1rem',
+            fontWeight: 700,
+            fontSize: '0.8rem',
+            background: goalsTab === 'private' ? '#D97706' : 'var(--bg-canvas-subtle)',
+            color: goalsTab === 'private' ? '#FFFFFF' : 'var(--text-main)',
+            border: goalsTab === 'private' ? '1px solid #D97706' : '1px solid var(--border-subtle)',
+          }}
+        >
+          Private Goals ({privateGoals.length})
+        </button>
+      </div>
+
       {/* Goals Grid */}
       <div className="grid-3col">
-        {savingsGoals.map(goal => {
+        {displayedGoals.map(goal => {
           const pct = Math.min(100, Math.round((goal.current_amount / goal.target_amount) * 100));
           const remainingPaise = Math.max(0, goal.target_amount - goal.current_amount);
           const isCompleted = goal.current_amount >= goal.target_amount;

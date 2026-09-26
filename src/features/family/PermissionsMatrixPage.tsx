@@ -20,23 +20,74 @@ import {
   ShieldOff,
   ChevronDown,
   BadgeCheck,
+  Save,
+  AlertCircle,
+  Settings,
 } from 'lucide-react';
+import { useViewSettings } from '../../context/ViewSettingsContext';
 
 export const PermissionsMatrixPage: React.FC = () => {
   const {
     members,
     roles,
     currentMember,
+    family,
+    isDemoMode,
     toggleMemberPermission,
     grantAllMemberPermissions,
     revokeAllMemberPermissions,
     resetMemberPermissions,
+    savePermissionsToBackend,
   } = useFamilyFinance();
+  const { openViewSettingsModal } = useViewSettings();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterGroup, setFilterGroup] = useState<string>('all');
   const [expandedMemberActions, setExpandedMemberActions] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<{ memberId: string; action: 'grant' | 'revoke' | 'reset' } | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [changedCount, setChangedCount] = useState(0);
+  const [changedMemberIds, setChangedMemberIds] = useState<Set<string>>(new Set());
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const handleTogglePermission = (memberId: string, permKey: PermissionKey, newValue: boolean) => {
+    toggleMemberPermission(memberId, permKey, newValue);
+    setHasUnsavedChanges(true);
+    setChangedCount(prev => prev + 1);
+    setChangedMemberIds(prev => new Set(prev).add(memberId));
+    setSaveSuccess(false);
+    setSaveError(null);
+  };
+
+  const handleSavePermissions = async () => {
+    setIsSaving(true);
+    setSaveError(null);
+    const result = await savePermissionsToBackend(Array.from(changedMemberIds));
+    setIsSaving(false);
+    if (result.success) {
+      setSaveSuccess(true);
+      setHasUnsavedChanges(false);
+      setChangedCount(0);
+      setChangedMemberIds(new Set());
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } else {
+      setSaveError(result.error || 'Failed to save. Please try again.');
+    }
+  };
+
+  // Clear Changes: physically resets all changed members back to their role defaults
+  const handleClearChanges = () => {
+    changedMemberIds.forEach(memberId => {
+      resetMemberPermissions(memberId);
+    });
+    setHasUnsavedChanges(false);
+    setChangedCount(0);
+    setChangedMemberIds(new Set());
+    setSaveSuccess(false);
+    setSaveError(null);
+  };
 
   const normRole = normalizeRole(currentMember.role);
   const isHead = normRole === 'family_head' || currentMember.role === 'FAMILY_HEAD';
@@ -73,6 +124,11 @@ export const PermissionsMatrixPage: React.FC = () => {
     else if (action === 'revoke') revokeAllMemberPermissions(memberId);
     else resetMemberPermissions(memberId);
     setExpandedMemberActions(null);
+    setHasUnsavedChanges(true);
+    setChangedCount(prev => prev + 1);
+    setChangedMemberIds(prev => new Set(prev).add(memberId));
+    setSaveSuccess(false);
+    setSaveError(null);
   };
 
   const getRoleColor = (role: string) => {
@@ -91,7 +147,7 @@ export const PermissionsMatrixPage: React.FC = () => {
   return (
     <div className="content-page">
       {/* Header */}
-      <div style={{ marginBottom: '1.5rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
           <div className="brand-icon-wrap" style={{ width: 40, height: 40 }}>
             <KeyRound size={22} color="var(--brass)" />
@@ -108,6 +164,16 @@ export const PermissionsMatrixPage: React.FC = () => {
             </p>
           </div>
         </div>
+
+        <button
+          className="btn btn-secondary btn-sm"
+          onClick={() => openViewSettingsModal('permissions')}
+          title="Permissions Matrix Settings"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+        >
+          <Settings size={14} />
+          <span>Matrix Settings</span>
+        </button>
       </div>
 
       {/* Notice Banner */}
@@ -450,7 +516,7 @@ export const PermissionsMatrixPage: React.FC = () => {
                                         : '0 0 0 1px var(--line)',
                                       outline: 'none',
                                     }}
-                                    onClick={() => toggleMemberPermission(m.id, perm.key as PermissionKey, !effectiveAllowed)}
+                                    onClick={() => handleTogglePermission(m.id, perm.key as PermissionKey, !effectiveAllowed)}
                                     title={`${effectiveAllowed ? 'Revoke' : 'Grant'} ${perm.key} for ${m.user.name}`}
                                   >
                                     <span
@@ -558,6 +624,141 @@ export const PermissionsMatrixPage: React.FC = () => {
         </div>
       </div>
 
+      {/* ── Inline Save Panel — appears directly below the table when Family Head makes changes ── */}
+      {isHead && (hasUnsavedChanges || saveSuccess || saveError) && (
+        <div
+          style={{
+            marginTop: '0.75rem',
+            borderRadius: '14px',
+            padding: '0.85rem 1.25rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem',
+            flexWrap: 'wrap',
+            background: saveSuccess
+              ? 'linear-gradient(135deg, rgba(22,163,74,0.12), rgba(34,160,91,0.08))'
+              : saveError
+              ? 'rgba(220,38,38,0.08)'
+              : 'var(--paper-card)',
+            border: saveSuccess
+              ? '1.5px solid rgba(34,160,91,0.4)'
+              : saveError
+              ? '1.5px solid rgba(220,38,38,0.35)'
+              : '1.5px solid var(--mint-primary)',
+            boxShadow: saveSuccess
+              ? '0 2px 12px rgba(22,163,74,0.15)'
+              : '0 2px 12px rgba(0,0,0,0.08)',
+          }}
+        >
+          {/* Left: status text */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0 }}>
+            {saveSuccess ? (
+              <Check size={18} color="#16A34A" />
+            ) : saveError ? (
+              <AlertCircle size={18} color="#DC2626" />
+            ) : (
+              <AlertCircle size={18} color="var(--mint-primary)" />
+            )}
+            <div>
+              <div style={{
+                fontWeight: 700,
+                fontSize: '0.85rem',
+                color: saveSuccess ? '#16A34A' : saveError ? '#DC2626' : 'var(--ink)',
+              }}>
+                {saveSuccess
+                  ? `Permissions saved successfully!${isDemoMode || family.id.startsWith('fam-demo') ? ' (stored locally)' : ' Synced to database.'}`
+                  : saveError
+                  ? `Save failed: ${saveError}`
+                  : 'Unsaved permission changes'}
+              </div>
+              {!saveSuccess && !saveError && (
+                <div style={{ fontSize: '0.72rem', color: 'var(--ink-muted)', marginTop: '0.1rem' }}>
+                  {changedCount} change{changedCount !== 1 ? 's' : ''} across {changedMemberIds.size} member{changedMemberIds.size !== 1 ? 's' : ''} — click Save to persist
+                  {(isDemoMode || family.id.startsWith('fam-demo')) && (
+                    <span style={{ marginLeft: '0.4rem', color: '#D97706', fontWeight: 600 }}>(Demo: saves to localStorage)</span>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Right: action buttons */}
+          {!saveSuccess && (
+            <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0, alignItems: 'center' }}>
+
+              {/* 🔴 Clear Changes — resets all modified members back to role defaults */}
+              {!isSaving && (
+                <button
+                  className="btn btn-sm"
+                  title="Reset all changed members back to their role default permissions"
+                  style={{
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    background: 'rgba(220,38,38,0.1)',
+                    color: '#DC2626',
+                    border: '1.5px solid rgba(220,38,38,0.3)',
+                    borderRadius: '8px',
+                    padding: '0.38rem 0.85rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(220,38,38,0.18)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'rgba(220,38,38,0.1)')}
+                  onClick={handleClearChanges}
+                >
+                  <RotateCcw size={13} /> Clear Changes
+                </button>
+              )}
+
+              {/* 🟢 Save Changes — persists to backend/localStorage */}
+              <button
+                className="btn btn-sm"
+                disabled={isSaving}
+                title="Save all permission changes to the database"
+                style={{
+                  fontWeight: 700,
+                  fontSize: '0.82rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  background: isSaving ? 'rgba(22,163,74,0.5)' : 'linear-gradient(135deg, #16A34A, #22A05B)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '0.38rem 1.1rem',
+                  boxShadow: isSaving ? 'none' : '0 3px 10px rgba(22,163,74,0.35)',
+                  opacity: isSaving ? 0.75 : 1,
+                  cursor: isSaving ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+                onClick={handleSavePermissions}
+              >
+                {isSaving ? (
+                  <>
+                    <span style={{
+                      width: 13, height: 13,
+                      border: '2px solid rgba(255,255,255,0.35)',
+                      borderTopColor: '#fff',
+                      borderRadius: '50%',
+                      animation: 'spin 0.7s linear infinite',
+                      display: 'inline-block',
+                    }} />
+                    Saving…
+                  </>
+                ) : (
+                  <><Save size={13} /> Save Changes</>
+                )}
+              </button>
+
+            </div>
+          )}
+        </div>
+      )}
+
       {filteredPermissions.length === 0 && (
         <div
           style={{
@@ -571,6 +772,7 @@ export const PermissionsMatrixPage: React.FC = () => {
           <div>No permissions match your search. <button className="btn btn-secondary btn-sm" onClick={() => { setSearchQuery(''); setFilterGroup('all'); }}>Clear filters</button></div>
         </div>
       )}
+
     </div>
   );
 };

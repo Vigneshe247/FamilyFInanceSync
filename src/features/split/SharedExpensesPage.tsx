@@ -16,10 +16,13 @@ import {
   ShieldCheck,
   X,
   Sparkles,
+  Settings,
 } from 'lucide-react';
+import { useViewSettings } from '../../context/ViewSettingsContext';
 
 export const SharedExpensesPage: React.FC = () => {
   const { sharedExpenses, members, currentMember, categories, addSharedExpense, settleSplitShare, hasPermission } = useFamilyFinance();
+  const { openViewSettingsModal } = useViewSettings();
 
   const [addModalOpen, setAddModalOpen] = useState(false);
 
@@ -137,11 +140,22 @@ export const SharedExpensesPage: React.FC = () => {
           </p>
         </div>
 
-        {canManage && (
-          <button className="btn btn-primary btn-sm" onClick={() => setAddModalOpen(true)}>
-            <Plus size={15} /> Split New Family Bill
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          {canManage && (
+            <button className="btn btn-primary btn-sm" onClick={() => setAddModalOpen(true)}>
+              <Plus size={15} /> Split New Family Bill
+            </button>
+          )}
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => openViewSettingsModal('split_expenses')}
+            title="Split Bills Settings"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+          >
+            <Settings size={14} />
+            <span>Settings</span>
           </button>
-        )}
+        </div>
       </div>
 
       {/* Top Stat Cards */}

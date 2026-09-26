@@ -3,7 +3,7 @@
    Sections 6, 16, 17, 18, 19, 31
    ========================================================= */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useFamilyFinance } from '../../context/FamilyFinanceContext';
 import { usePermissions } from '../../context/FamilyContext';
 import { formatPaise, paiseToRupees, rupeesToPaise } from '../../utils/currency';
@@ -25,10 +25,16 @@ import {
   Phone,
   Calendar,
   MapPin,
+  Lock,
+  Settings,
+  Home,
+  Edit3,
+  Check,
 } from 'lucide-react';
 import { InvitationModal } from '../../components/modals/InvitationModal';
 import { CreateRoleModal } from '../../components/modals/CreateRoleModal';
 import { AccessRestricted } from '../../components/auth/AccessRestricted';
+import { useViewSettings } from '../../context/ViewSettingsContext';
 
 interface MembersPageProps {
   onNavigatePermissions?: () => void;
@@ -36,6 +42,10 @@ interface MembersPageProps {
 
 export const MembersPage: React.FC<MembersPageProps> = ({ onNavigatePermissions }) => {
   const {
+    family,
+    activeFamily,
+    activeFamilyMembers,
+    updateFamilyName,
     members,
     currentMember,
     roles,
@@ -49,6 +59,36 @@ export const MembersPage: React.FC<MembersPageProps> = ({ onNavigatePermissions 
   } = useFamilyFinance();
 
   const { can, isFamilyHead } = usePermissions();
+  const { openViewSettingsModal } = useViewSettings();
+
+  const normRole = (currentMember?.role || '').toLowerCase();
+  const isHead = isFamilyHead || normRole === 'family_head' || normRole.includes('head');
+  const isCoManager = normRole.includes('spouse') || normRole.includes('co_manager') || normRole.includes('comanager');
+  const isAdult = normRole.includes('adult');
+  const isViewer = normRole.includes('viewer');
+  const isChild = normRole.includes('child') || normRole === 'son' || normRole === 'daughter';
+
+  // Only authorized family members can edit the family name
+  const canEditFamilyName = (isHead || isCoManager || isAdult) && !isViewer && !isChild;
+
+  const [isEditingFamilyName, setIsEditingFamilyName] = useState(false);
+  const [familyNameInput, setFamilyNameInput] = useState(family?.name || '');
+  const [nameSaveFeedback, setNameSaveFeedback] = useState(false);
+
+  useEffect(() => {
+    if (family?.name) {
+      setFamilyNameInput(family.name);
+    }
+  }, [family?.name]);
+
+  const handleSaveFamilyName = () => {
+    const trimmed = familyNameInput.trim();
+    if (!trimmed) return;
+    updateFamilyName(trimmed);
+    setIsEditingFamilyName(false);
+    setNameSaveFeedback(true);
+    setTimeout(() => setNameSaveFeedback(false), 2500);
+  };
 
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [createRoleModalOpen, setCreateRoleModalOpen] = useState(false);
@@ -65,7 +105,6 @@ export const MembersPage: React.FC<MembersPageProps> = ({ onNavigatePermissions 
     return <AccessRestricted message="You don't have permission to view family members." />;
   }
 
-  const isHead = isFamilyHead;
   const pendingInvitations = invitations.filter(inv => inv.status === 'PENDING');
 
   const handleSaveLimit = (memberId: string) => {
@@ -102,27 +141,257 @@ export const MembersPage: React.FC<MembersPageProps> = ({ onNavigatePermissions 
           </p>
         </div>
 
-        {isHead && (
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          {canEditFamilyName && (
             <button
               className="btn btn-secondary btn-sm"
-              onClick={() => setCreateRoleModalOpen(true)}
-              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+              onClick={() => {
+                setFamilyNameInput(family.name);
+                setIsEditingFamilyName(true);
+              }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
             >
-              <ShieldPlus size={15} color="var(--primary)" />
-              <span>Create Role</span>
+              <Edit3 size={14} color="var(--mint-primary)" />
+              <span>Edit Family Name</span>
             </button>
+          )}
 
-            <button
-              className="btn btn-primary btn-sm"
-              onClick={() => setInviteModalOpen(true)}
-              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
-            >
-              <UserPlus size={15} />
-              <span>Invite Family Member</span>
-            </button>
+          {isHead && (
+            <>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => setCreateRoleModalOpen(true)}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+              >
+                <ShieldPlus size={15} color="var(--primary)" />
+                <span>Create Role</span>
+              </button>
+
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={() => setInviteModalOpen(true)}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+              >
+                <UserPlus size={15} />
+                <span>Invite Family Member</span>
+              </button>
+            </>
+          )}
+
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => openViewSettingsModal('members')}
+            title="Members View Settings"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+          >
+            <Settings size={14} />
+            <span>Settings</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Family Identity & Workspace Name Card */}
+      <div
+        className="neo-card"
+        style={{
+          marginBottom: '1.5rem',
+          padding: '1.15rem 1.45rem',
+          background: 'var(--card-bg)',
+          borderRadius: 'var(--radius-card)',
+          border: '1px solid var(--border-card)',
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '1rem',
+          boxShadow: 'var(--shadow-card)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flex: '1 1 340px' }}>
+          <div
+            style={{
+              width: '46px',
+              height: '46px',
+              borderRadius: '14px',
+              background: 'linear-gradient(135deg, #059669 0%, #10B981 100%)',
+              color: '#FFFFFF',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 4px 12px rgba(5, 150, 105, 0.22)',
+              flexShrink: 0,
+            }}
+          >
+            <Home size={22} />
           </div>
-        )}
+
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem', flexWrap: 'wrap' }}>
+              <span
+                style={{
+                  fontSize: '0.68rem',
+                  fontWeight: 800,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  color: 'var(--mint-primary)',
+                }}
+              >
+                Family Workspace Name
+              </span>
+              <span
+                style={{
+                  fontSize: '0.68rem',
+                  color: 'var(--text-muted)',
+                  background: 'var(--card-bg-subtle)',
+                  padding: '0.1rem 0.45rem',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-subtle)',
+                  fontWeight: 600,
+                }}
+              >
+                {activeFamilyMembers.length} Members
+              </span>
+              {nameSaveFeedback && (
+                <span
+                  style={{
+                    fontSize: '0.68rem',
+                    color: '#059669',
+                    background: 'rgba(5, 150, 105, 0.12)',
+                    padding: '0.1rem 0.45rem',
+                    borderRadius: '6px',
+                    fontWeight: 700,
+                  }}
+                >
+                  ✓ Name Updated
+                </span>
+              )}
+            </div>
+
+            {isEditingFamilyName ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', marginTop: '0.35rem', flexWrap: 'wrap' }}>
+                <input
+                  type="text"
+                  className="input"
+                  value={familyNameInput}
+                  onChange={e => setFamilyNameInput(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') handleSaveFamilyName();
+                    if (e.key === 'Escape') {
+                      setFamilyNameInput(family.name);
+                      setIsEditingFamilyName(false);
+                    }
+                  }}
+                  placeholder="Enter family name..."
+                  style={{
+                    fontSize: '1.05rem',
+                    fontWeight: 700,
+                    padding: '0.35rem 0.65rem',
+                    maxWidth: '300px',
+                    height: '36px',
+                  }}
+                  autoFocus
+                />
+                <button
+                  className="btn btn-sm btn-primary"
+                  onClick={handleSaveFamilyName}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', height: '36px' }}
+                >
+                  <Check size={14} />
+                  <span>Save</span>
+                </button>
+                <button
+                  className="btn btn-sm btn-secondary"
+                  onClick={() => {
+                    setFamilyNameInput(family.name);
+                    setIsEditingFamilyName(false);
+                  }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', height: '36px' }}
+                >
+                  <X size={14} />
+                  <span>Cancel</span>
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <h2
+                  style={{
+                    fontSize: '1.4rem',
+                    fontWeight: 800,
+                    color: 'var(--text-main)',
+                    margin: 0,
+                    letterSpacing: '-0.02em',
+                  }}
+                >
+                  {family.name}
+                </h2>
+
+                {canEditFamilyName ? (
+                  <button
+                    className="btn btn-sm btn-secondary"
+                    onClick={() => {
+                      setFamilyNameInput(family.name);
+                      setIsEditingFamilyName(true);
+                    }}
+                    title="Change Family Name"
+                    style={{
+                      padding: '0.2rem 0.55rem',
+                      fontSize: '0.72rem',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.3rem',
+                      borderColor: 'var(--mint-primary)',
+                      color: 'var(--mint-primary)',
+                      background: 'rgba(5, 150, 105, 0.08)',
+                      fontWeight: 700,
+                    }}
+                  >
+                    <Edit3 size={13} />
+                    <span>Change Name</span>
+                  </button>
+                ) : (
+                  <span
+                    style={{
+                      fontSize: '0.68rem',
+                      color: 'var(--text-muted)',
+                      background: 'var(--card-bg-subtle)',
+                      padding: '0.2rem 0.5rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-card)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.3rem',
+                      fontWeight: 600,
+                    }}
+                    title="Only family members can change the family name"
+                  >
+                    <Lock size={11} />
+                    <span>Family members only</span>
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right side info pill */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div
+            style={{
+              padding: '0.45rem 0.85rem',
+              borderRadius: '12px',
+              background: 'var(--card-bg-subtle)',
+              border: '1px solid var(--border-subtle)',
+              textAlign: 'right',
+            }}
+          >
+            <div style={{ fontSize: '0.65rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+              Permissions Rule
+            </div>
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: canEditFamilyName ? 'var(--mint-primary)' : 'var(--text-muted)' }}>
+              {canEditFamilyName ? '✓ Authorized to change name' : '🔒 Read-only for this role'}
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Active Pending Invitations Section */}
@@ -249,7 +518,12 @@ export const MembersPage: React.FC<MembersPageProps> = ({ onNavigatePermissions 
                         </span>
                       </div>
                       <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem', marginTop: '0.15rem' }}>
-                        <Mail size={12} /> {m.user.email}
+                        <Mail size={12} />
+                        {isMe || isHead ? m.user.email : (
+                          <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                            <Lock size={11} /> Private
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -577,7 +851,10 @@ export const MembersPage: React.FC<MembersPageProps> = ({ onNavigatePermissions 
                     {memberToView.user.name}
                   </div>
                   <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                    {memberToView.user.email}
+                    {(isHead || memberToView.id === currentMember.id)
+                      ? memberToView.user.email
+                      : <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontStyle: 'italic' }}><Lock size={12} /> Private — only visible to owner or Family Head</span>
+                    }
                   </div>
                   <span
                     style={{
@@ -599,11 +876,21 @@ export const MembersPage: React.FC<MembersPageProps> = ({ onNavigatePermissions 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', fontSize: '0.82rem' }}>
                 <div>
                   <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Phone</span>
-                  <div style={{ fontWeight: 600 }}>{memberToView.user.phone || '+91 98401 23456'}</div>
+                  <div style={{ fontWeight: 600 }}>
+                    {(isHead || memberToView.id === currentMember.id)
+                      ? (memberToView.user.phone || '+91 98401 23456')
+                      : <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.78rem' }}><Lock size={11} /> Private</span>
+                    }
+                  </div>
                 </div>
                 <div>
                   <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Date of Birth</span>
-                  <div style={{ fontWeight: 600 }}>{memberToView.user.date_of_birth || '24 February 2007'}</div>
+                  <div style={{ fontWeight: 600 }}>
+                    {(isHead || memberToView.id === currentMember.id)
+                      ? (memberToView.user.date_of_birth || '24 February 2007')
+                      : <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.78rem' }}><Lock size={11} /> Private</span>
+                    }
+                  </div>
                 </div>
                 <div>
                   <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Location</span>

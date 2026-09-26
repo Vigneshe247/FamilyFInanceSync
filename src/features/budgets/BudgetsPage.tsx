@@ -14,7 +14,9 @@ import {
   Calendar,
   Layers,
   Sparkles,
+  Settings,
 } from 'lucide-react';
+import { useViewSettings } from '../../context/ViewSettingsContext';
 
 export const BudgetsPage: React.FC = () => {
   const {
@@ -24,6 +26,7 @@ export const BudgetsPage: React.FC = () => {
     hasPermission,
     updateBudgetCategory,
   } = useFamilyFinance();
+  const { openViewSettingsModal } = useViewSettings();
 
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [editRupees, setEditRupees] = useState<string>('');
@@ -97,9 +100,21 @@ export const BudgetsPage: React.FC = () => {
           </p>
         </div>
 
-        <div className="sync-chip">
-          <Calendar size={14} />
-          <span>Active Cycle: 01 Sep — 30 Sep 2026</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <div className="sync-chip">
+            <Calendar size={14} />
+            <span>Active Cycle: 01 Sep — 30 Sep 2026</span>
+          </div>
+
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => openViewSettingsModal('budgets')}
+            title="Budgets View Settings"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+          >
+            <Settings size={14} />
+            <span>Settings</span>
+          </button>
         </div>
       </div>
 

@@ -26,8 +26,10 @@ import {
   ChevronUp,
   SlidersHorizontal,
   X,
+  Settings,
 } from 'lucide-react';
 import { normalizeRole } from '../../utils/permissions';
+import { useViewSettings } from '../../context/ViewSettingsContext';
 
 type FilterMode = 'preset' | 'range' | 'single';
 type PresetPeriod = 'today' | 'this_week' | 'current_month' | 'last_month' | 'q3' | 'year_to_date';
@@ -44,12 +46,17 @@ const PRESET_LABELS: Record<PresetPeriod, string> = {
 export const ReportsPage: React.FC = () => {
   const {
     transactions,
+    familyTransactions,
+    authorizedTransactions,
+    activeFamily,
+    activeUserId,
     categories,
     members,
     budget,
     savingsGoals,
     recurring,
   } = useFamilyFinance();
+  const { openViewSettingsModal } = useViewSettings();
 
   const isDemoDate = transactions.some(t => t.transaction_date.startsWith('2026'));
   const anchor = isDemoDate ? new Date('2026-09-20') : new Date();
@@ -64,6 +71,7 @@ export const ReportsPage: React.FC = () => {
   const [rangeTo, setRangeTo] = useState(anchorStr);
   const [singleDate, setSingleDate] = useState(anchorStr);
   const [selectedMemberId, setSelectedMemberId] = useState<string>('all');
+  const [reportScope, setReportScope] = useState<'family' | 'personal'>('family');
   const [showDailyBreakdown, setShowDailyBreakdown] = useState(false);
 
   // Compute date range from filter mode
@@ -257,9 +265,20 @@ export const ReportsPage: React.FC = () => {
           </p>
         </div>
 
-        <button className="btn btn-secondary btn-sm" onClick={handleExportFullReport}>
-          <Download size={14} /> Export Statement
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <button className="btn btn-secondary btn-sm" onClick={handleExportFullReport}>
+            <Download size={14} /> Export Statement
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => openViewSettingsModal('reports')}
+            title="Reports & Analytics Settings"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+          >
+            <Settings size={14} />
+            <span>Settings</span>
+          </button>
+        </div>
       </div>
 
       {/* ==================== FILTER BAR ==================== */}

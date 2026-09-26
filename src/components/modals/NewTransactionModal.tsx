@@ -6,7 +6,7 @@
 import React, { useState } from 'react';
 import { useFamilyFinance } from '../../context/FamilyFinanceContext';
 import { rupeesToPaise } from '../../utils/currency';
-import { X, ArrowDownLeft, ArrowUpRight, CheckCircle2, Calendar, Tag, FileText } from 'lucide-react';
+import { X, ArrowDownLeft, ArrowUpRight, CheckCircle2, Calendar, Tag, FileText, Lock, Users, Shield } from 'lucide-react';
 
 interface NewTransactionModalProps {
   isOpen: boolean;
@@ -19,7 +19,12 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
   onClose,
   initialType = 'expense',
 }) => {
-  const { categories, accounts, currentMember, addTransaction } = useFamilyFinance();
+  const { categories, accounts, currentMember, activeFamily, allFamilies, addTransaction } = useFamilyFinance();
+
+  const [visibility, setVisibility] = useState<'private' | 'family'>(() => {
+    return (localStorage.getItem('ffs_default_visibility') as 'private' | 'family') || 'private';
+  });
+  const [targetFamilyId, setTargetFamilyId] = useState<string>(activeFamily.id);
 
   const [type, setType] = useState<'expense' | 'income'>(initialType);
   const [amountRupees, setAmountRupees] = useState('');
@@ -52,6 +57,7 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
       return;
     }
 
+    const isPrivate = visibility === 'private';
     addTransaction({
       user_id: currentMember.user_id,
       account_id: accountId,
@@ -63,9 +69,13 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
       transaction_date: new Date(transactionDate).toISOString(),
       payment_method: paymentMethod,
       notes: notes.trim() || undefined,
-      is_shared: true,
+      is_shared: !isPrivate,
+      visibility,
+      family_id: isPrivate ? null : targetFamilyId,
       status: 'cleared',
     });
+
+    localStorage.setItem('ffs_default_visibility', visibility);
 
     onClose();
     setAmountRupees('');
@@ -84,7 +94,7 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
             </h3>
           </div>
           <button className="btn btn-icon btn-sm" onClick={onClose} aria-label="Close">
-            <X size={16} />
+            <X size={19} />
           </button>
         </div>
 
@@ -263,6 +273,74 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
                   </select>
                 )}
               </div>
+            </div>
+
+                        {/* Visibility Settings (Sections 7 & 8) */}
+            <div style={{ padding: '0.85rem', borderRadius: '16px', background: 'var(--bg-canvas-subtle)', border: '1px solid var(--border-subtle)' }}>
+              <label className="label" style={{ fontWeight: 700, fontSize: '0.78rem', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <Shield size={14} color="var(--mint-primary)" /> Transaction Privacy & Visibility
+              </label>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem', marginBottom: visibility === 'family' ? '0.75rem' : 0 }}>
+                {/* Private Option */}
+                <div
+                  onClick={() => setVisibility('private')}
+                  style={{
+                    padding: '0.65rem 0.75rem',
+                    borderRadius: '12px',
+                    cursor: 'pointer',
+                    border: visibility === 'private' ? '2px solid #D97706' : '1px solid var(--border-subtle)',
+                    background: visibility === 'private' ? 'rgba(217, 119, 6, 0.08)' : 'var(--bg-card)',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, fontSize: '0.82rem', color: visibility === 'private' ? '#D97706' : 'var(--text-main)' }}>
+                    <Lock size={14} /> Private
+                  </div>
+                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.2rem', lineHeight: 1.3 }}>
+                    Only you can see this transaction.
+                  </div>
+                </div>
+
+                {/* Family Option */}
+                <div
+                  onClick={() => setVisibility('family')}
+                  style={{
+                    padding: '0.65rem 0.75rem',
+                    borderRadius: '12px',
+                    cursor: 'pointer',
+                    border: visibility === 'family' ? '2px solid var(--mint-primary)' : '1px solid var(--border-subtle)',
+                    background: visibility === 'family' ? 'rgba(5, 150, 105, 0.08)' : 'var(--bg-card)',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, fontSize: '0.82rem', color: visibility === 'family' ? 'var(--mint-primary)' : 'var(--text-main)' }}>
+                    <Users size={14} /> Family Shared
+                  </div>
+                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.2rem', lineHeight: 1.3 }}>
+                    Shared with members of your selected family.
+                  </div>
+                </div>
+              </div>
+
+              {visibility === 'family' && (
+                <div style={{ marginTop: '0.65rem', animation: 'fadeIn 0.2s ease' }}>
+                  <label className="label" style={{ fontSize: '0.72rem', fontWeight: 600 }}>
+                    Select Family to Share With
+                  </label>
+                  <select
+                    className="select"
+                    value={targetFamilyId}
+                    onChange={e => setTargetFamilyId(e.target.value)}
+                  >
+                    {allFamilies.map(f => (
+                      <option key={f.id} value={f.id}>
+                        {f.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             {/* Notes field (Section 9 & 10) */}

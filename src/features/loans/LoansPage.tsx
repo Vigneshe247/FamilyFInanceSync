@@ -19,10 +19,28 @@ import {
   Trash2,
   X,
   Sparkles,
+  Settings,
 } from 'lucide-react';
+import { useViewSettings } from '../../context/ViewSettingsContext';
 
 export const LoansPage: React.FC = () => {
-  const { loans, addLoan, recordEmiPayment, deleteLoan, hasPermission } = useFamilyFinance();
+  const {
+    loans,
+    familyLoans,
+    privateLoans,
+    activeFamily,
+    allFamilies,
+    activeUserId,
+    addLoan,
+    recordEmiPayment,
+    deleteLoan,
+    hasPermission,
+  } = useFamilyFinance();
+
+  const [loanTab, setLoanTab] = useState<'family' | 'private'>('family');
+  const [loanVisibility, setLoanVisibility] = useState<'family' | 'private'>('family');
+  const [targetFamilyId, setTargetFamilyId] = useState<string>(activeFamily.id);
+  const { openViewSettingsModal } = useViewSettings();
 
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [payEmiModalLoanId, setPayEmiModalLoanId] = useState<string | null>(null);
@@ -40,15 +58,17 @@ export const LoansPage: React.FC = () => {
 
   const canManage = hasPermission('transactions.create');
 
-  const totalOutstandingPaise = loans
+  const displayedLoans = loanTab === 'family' ? familyLoans : privateLoans;
+
+  const totalOutstandingPaise = displayedLoans
     .filter(l => l.status === 'active')
     .reduce((sum, l) => sum + l.remaining_balance, 0);
 
-  const totalMonthlyEmiPaise = loans
+  const totalMonthlyEmiPaise = displayedLoans
     .filter(l => l.status === 'active')
     .reduce((sum, l) => sum + l.monthly_emi, 0);
 
-  const totalPaidPaise = loans.reduce((sum, l) => sum + l.total_paid, 0);
+  const totalPaidPaise = displayedLoans.reduce((sum, l) => sum + l.total_paid, 0);
 
   const handleAddSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,7 +88,10 @@ export const LoansPage: React.FC = () => {
       remaining_balance: principalPaise,
       completion_date: completionDate,
       status: 'active',
-    });
+      visibility: loanVisibility,
+      family_id: loanVisibility === 'family' ? targetFamilyId : null,
+      user_id: activeUserId,
+    } as any);
 
     setAddModalOpen(false);
     setLoanName('');
@@ -128,11 +151,22 @@ export const LoansPage: React.FC = () => {
           </p>
         </div>
 
-        {canManage && (
-          <button className="btn btn-primary btn-sm" onClick={() => setAddModalOpen(true)}>
-            <Plus size={15} /> Add Loan / Debt
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          {canManage && (
+            <button className="btn btn-primary btn-sm" onClick={() => setAddModalOpen(true)}>
+              <Plus size={15} /> Add Loan / Debt
+            </button>
+          )}
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => openViewSettingsModal('loans')}
+            title="Loans & Debt Settings"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+          >
+            <Settings size={14} />
+            <span>Settings</span>
           </button>
-        )}
+        </div>
       </div>
 
       {/* Overview Stat Cards */}
@@ -173,7 +207,7 @@ export const LoansPage: React.FC = () => {
 
       {/* Loans Grid */}
       <div className="grid-2col">
-        {loans.map(loan => {
+        {displayedLoans.map(loan => {
           const totalFacility = loan.principal_amount;
           const paid = loan.total_paid;
           const pctPaid = totalFacility > 0 ? Math.min(100, Math.round((paid / totalFacility) * 100)) : 0;

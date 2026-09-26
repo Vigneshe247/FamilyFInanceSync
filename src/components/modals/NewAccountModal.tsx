@@ -60,8 +60,8 @@ export const NewAccountModal: React.FC<NewAccountModalProps> = ({ isOpen, onClos
             <Wallet size={18} color="var(--mint-primary)" />
             <h3 style={{ fontSize: '1.2rem', fontWeight: 700 }}>Add Financial Repository</h3>
           </div>
-          <button className="btn-icon" onClick={onClose}>
-            <X size={16} />
+          <button className="btn-icon" onClick={onClose} aria-label="Close">
+            <X size={19} />
           </button>
         </div>
 

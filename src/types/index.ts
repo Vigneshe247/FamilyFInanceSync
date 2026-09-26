@@ -136,8 +136,23 @@ export interface Family {
   owner_id: string;
   currency: string; // Default: 'INR'
   timezone: string;
+  description?: string;
+  country?: string;
   created_at: string;
   updated_at: string;
+}
+
+export type FamilyMembershipRole = 'owner' | 'admin' | 'member' | 'viewer' | SystemRoleType;
+
+export interface FamilyMembership {
+  family_id: string;
+  family_name: string;
+  role: FamilyMembershipRole;
+  status: 'active' | 'pending' | 'invited' | 'removed';
+  member_count: number;
+  description?: string;
+  currency?: string;
+  joined_at?: string;
 }
 
 export interface FamilyMember {
@@ -239,9 +254,11 @@ export interface Account {
 
 export type TransactionType = 'income' | 'expense' | 'transfer' | 'refund' | 'adjustment';
 
+export type VisibilitySetting = 'private' | 'family';
+
 export interface Transaction {
   id: string;
-  family_id: string;
+  family_id: string | null;
   user_id: string;
   account_id: string;
   category_id: string;
@@ -301,7 +318,8 @@ export interface SpendingLimit {
 
 export interface SavingsGoal {
   id: string;
-  family_id: string;
+  family_id: string | null;
+  visibility?: 'private' | 'family';
   name: string;
   description: string;
   target_amount: number; // In paise
@@ -371,9 +389,6 @@ export interface NotificationItem {
   read_at?: string | null;
   created_at: string;
 }
-  read_at?: string | null;
-  created_at: string;
-}
 
 export interface AuditLogItem {
   id: string;
@@ -402,7 +417,9 @@ export type LoanType = 'personal' | 'education' | 'home' | 'vehicle' | 'credit_c
 
 export interface LoanItem {
   id: string;
-  family_id: string;
+  family_id: string | null;
+  visibility?: 'private' | 'family';
+  user_id?: string;
   name: string;
   type: LoanType;
   lender_or_borrower: string;
