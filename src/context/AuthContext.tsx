@@ -12,7 +12,7 @@ import {
   devSimulateVerifyEmail,
   subscribeMockAuth,
   getCurrentMockUser,
-} from "../firebase/authService";
+} from "../services/authService";
 import { supabase, supabaseAuthService } from "../services/supabase";
 import { FirestoreUserDocument } from "../types/firestore";
 import { DEMO_MEMBERS } from "../data/seedData";

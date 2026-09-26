@@ -3,7 +3,7 @@ import { AuthLayout } from "./AuthLayout";
 import { useRouter } from "../../router/Router";
 import { useAuth } from "../../context/AuthContext";
 import { useFamilyFinance } from "../../context/FamilyFinanceContext";
-import { registerUser, loginWithGoogle, getFirebaseErrorMessage } from "../../firebase/authService";
+import { registerUser, loginWithGoogle, getFirebaseErrorMessage } from "../../services/authService";
 import { Eye, EyeOff, AlertCircle, Shield, IndianRupee, ArrowRight, CheckCircle2, Sparkles } from "lucide-react";
 
 export const RegisterPage: React.FC = () => {

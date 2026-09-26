@@ -26,7 +26,6 @@ import {
   AllowanceConfig,
   VisibilityClassification,
 } from '../types';
-import { firebaseSync } from '../services/firebase';
 import { supabaseDataService } from '../services/supabaseDataService';
 import { calculateFamilySummary, FamilyFinancialSummary } from '../utils/financialEngine';
 import { getFamilyChannel } from '../lib/realtime/domain/familyRealtime';
@@ -857,15 +856,7 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
 
     setMembers(prev => [...prev, newMember]);
     logAudit('MEMBER_INVITED', 'member', newMemberId, { name, email, role });
-
-    firebaseSync.emitRealtimeEvent({
-      family_id: family.id,
-      event_type: 'MEMBER_JOINED',
-      actor_id: currentMember.user_id,
-      actor_name: currentMember.user.name,
-      payload: { memberId: newMemberId, name, role },
-    });
-  }, [family.id, currentMember, logAudit]);
+  }, [currentMember, logAudit]);
 
   // Action: Create Invitation
   const createInvitation = useCallback((role: SystemRoleType, email?: string): FamilyInvitation => {
@@ -888,14 +879,6 @@ export const FamilyFinanceProvider: React.FC<{ children: ReactNode }> = ({ child
 
     setInvitations(prev => [newInvite, ...prev]);
     logAudit('INVITATION_CREATED', 'invitation', inviteId, { code, role, email });
-
-    firebaseSync.emitRealtimeEvent({
-      family_id: family.id,
-      event_type: 'INVITATION_CREATED',
-      actor_id: currentMember.user_id,
-      actor_name: currentMember.user.name,
-      payload: { code, role },
-    });
 
     return newInvite;
   }, [family.id, currentMember, logAudit]);

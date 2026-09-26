@@ -67,21 +67,35 @@ export type PermissionKey =
   | 'family.update'
   | 'family.summary'
   | 'members.view'
+  | 'members.view_finances'
   | 'members.invite'
   | 'members.remove'
   | 'members.update_role'
   | 'members.update_permissions'
+  | 'roles.view'
+  | 'roles.manage'
+  | 'permissions.view'
+  | 'permissions.update'
+  | 'transactions.create_income'
+  | 'transactions.create_expense'
   | 'transactions.view'
   | 'transactions.view_own'
   | 'transactions.view_family'
   | 'transactions.create'
   | 'transactions.update'
+  | 'transactions.update_own'
+  | 'transactions.update_any'
   | 'transactions.delete'
+  | 'transactions.delete_own'
+  | 'transactions.delete_any'
+  | 'family_finance.view'
   | 'budgets.view'
+  | 'budgets.manage'
   | 'budgets.create'
   | 'budgets.update'
   | 'budgets.delete'
   | 'accounts.view'
+  | 'accounts.manage'
   | 'accounts.create'
   | 'accounts.update'
   | 'accounts.delete'
@@ -90,14 +104,17 @@ export type PermissionKey =
   | 'requests.approve'
   | 'requests.reject'
   | 'goals.view'
+  | 'goals.manage'
   | 'goals.create'
   | 'goals.update'
   | 'goals.delete'
   | 'reports.view'
   | 'reports.export'
   | 'audit.view'
+  | 'notifications.view'
   | 'notifications.receive'
-  | keyof RolePermissions;
+  | keyof RolePermissions
+  | (string & {});
 
 export interface User {
   id: string;
@@ -234,11 +251,13 @@ export interface Transaction {
   description: string;
   transaction_date: string;
   payment_method: string;
+  paymentMethod?: string;
   notes?: string;
   is_shared: boolean;
-  visibility?: VisibilityClassification;
+  visibility?: VisibilityClassification | string;
   internal_transfer_type?: 'member_transfer' | 'allowance' | 'standard';
   idempotency_key?: string;
+  voided_reason?: string;
   status: 'cleared' | 'pending' | 'reconciled' | 'voided';
   receipt_url?: string;
   from_account_id?: string;
@@ -311,6 +330,8 @@ export interface ExpenseRequest {
   family_id: string;
   requested_by: string;
   requester_name: string;
+  member_id?: string;
+  member_name?: string;
   amount: number; // In paise
   category_id: string;
   title: string;
@@ -322,6 +343,7 @@ export interface ExpenseRequest {
   reviewed_at?: string;
   review_comment?: string;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface RecurringTransaction {
@@ -343,9 +365,12 @@ export interface NotificationItem {
   id: string;
   user_id: string;
   family_id: string;
-  type: 'budget_alert' | 'request_created' | 'request_resolved' | 'recurring_due' | 'goal_milestone' | 'member_activity';
+  type: 'budget_alert' | 'request_created' | 'request_resolved' | 'recurring_due' | 'goal_milestone' | 'member_activity' | 'request' | 'info' | (string & {});
   title: string;
   message: string;
+  read_at?: string | null;
+  created_at: string;
+}
   read_at?: string | null;
   created_at: string;
 }

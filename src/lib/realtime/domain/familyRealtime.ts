@@ -2,12 +2,12 @@
    FAMILYFINANCESYNC DOMAIN REALTIME BRIDGE
    Consumes generic @familyfinance/realtime-core to route
    family transactions, requests, members, and notifications.
+   Uses private per-user topics (user:{userId}) for secure delivery.
    ========================================================= */
 
 import { RealtimeClient } from '../core/RealtimeClient';
 import { LocalBroadcastAdapter } from '../adapters/LocalBroadcastAdapter';
 import { SupabaseRealtimeAdapter } from '../adapters/SupabaseRealtimeAdapter';
-import { Transaction, ExpenseRequest, NotificationItem, FamilyMember } from '../../../types';
 
 export const FamilyEventTypes = {
   TRANSACTION_CREATED: 'transaction.created',
@@ -16,10 +16,12 @@ export const FamilyEventTypes = {
   REQUEST_CREATED: 'request.created',
   REQUEST_APPROVED: 'request.approved',
   REQUEST_REJECTED: 'request.rejected',
+  REQUEST_CANCELLED: 'request.cancelled',
   MEMBER_JOINED: 'member.joined',
   MEMBER_REMOVED: 'member.removed',
   MEMBER_UPDATED: 'member.updated',
   PERMISSION_CHANGED: 'permission.changed',
+  VISIBILITY_CHANGED: 'visibility.changed',
   NOTIFICATION_CREATED: 'notification.created',
 } as const;
 
@@ -42,6 +44,17 @@ familyRealtimeClient.connect().catch(err => {
   console.warn('[FamilyRealtime] Auto-connect deferred:', err);
 });
 
+/**
+ * Secure, private per-user realtime channel.
+ * Target audience is calculated in PostgreSQL at write time (003 migration).
+ */
+export function getUserChannel(userId: string) {
+  return familyRealtimeClient.channel(`user:${userId}`);
+}
+
+/**
+ * Family channel for workspace-level broadcast events (e.g., family settings update).
+ */
 export function getFamilyChannel(familyId: string) {
   return familyRealtimeClient.channel(`family:${familyId}`);
 }

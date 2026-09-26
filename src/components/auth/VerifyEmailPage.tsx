@@ -14,7 +14,7 @@ import React, { useState } from "react";
 import { AuthLayout } from "./AuthLayout";
 import { useRouter } from "../../router/Router";
 import { useAuth } from "../../context/AuthContext";
-import { resendVerificationEmail, getFirebaseErrorMessage } from "../../firebase/authService";
+import { resendVerificationEmail, getFirebaseErrorMessage } from "../../services/authService";
 import { MailCheck, RefreshCw, Send, ArrowLeft, CheckCircle2, AlertTriangle, ShieldCheck } from "lucide-react";
 
 export const VerifyEmailPage: React.FC = () => {

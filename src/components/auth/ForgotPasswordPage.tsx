@@ -10,7 +10,7 @@
 import React, { useState } from "react";
 import { AuthLayout } from "./AuthLayout";
 import { useRouter } from "../../router/Router";
-import { resetPassword, getFirebaseErrorMessage } from "../../firebase/authService";
+import { resetPassword, getFirebaseErrorMessage } from "../../services/authService";
 import { KeyRound, Mail, ArrowLeft, CheckCircle2, AlertCircle } from "lucide-react";
 
 export const ForgotPasswordPage: React.FC = () => {
